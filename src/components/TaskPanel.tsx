@@ -82,6 +82,7 @@ function formatSeg(seconds: number) {
 }
 
 const STATUS_META: Record<Task['status'], { label: string; dot: string }> = {
+  queued:       { label: '排队中', dot: '#6e7681' },
   pending:      { label: '等待中', dot: '#6e7681' },
   uploading:    { label: '上传中', dot: '#d29922' },
   transcribing: { label: '转写中', dot: '#4493f8' },
@@ -343,11 +344,12 @@ function CreateForm({
 // Task card
 // ────────────────────────────────────────────────────────────────────────────
 function TaskCard({
-  task, isSelected, isArchived, onSelect, onDelete, onCancel, onRetry,
+  task, isSelected, isArchived, queuePosition, onSelect, onDelete, onCancel, onRetry,
 }: {
   task: Task;
   isSelected?: boolean;
   isArchived?: boolean;
+  queuePosition?: number;
   onSelect: () => void;
   onDelete: () => void;
   onCancel: () => void;
@@ -355,6 +357,7 @@ function TaskCard({
 }) {
   const meta = STATUS_META[task.status];
   const isActive = task.status === 'uploading' || task.status === 'transcribing';
+  const isQueued = task.status === 'queued';
   const initial = task.studentName.slice(0, 1);
 
   return (
@@ -397,7 +400,7 @@ function TaskCard({
             {/* Hover actions */}
             <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={e => e.stopPropagation()}>
-              {isActive && (
+              {(isActive || isQueued) && (
                 <button onClick={onCancel} className="p-1 rounded transition-colors"
                   style={{ color: 'var(--text-3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--amber)'}
@@ -431,7 +434,7 @@ function TaskCard({
               <span className="w-1.5 h-1.5 rounded-full"
                 style={{ background: meta.dot, boxShadow: isActive ? `0 0 4px ${meta.dot}` : undefined }} />
               <span className="text-[11px] font-medium" style={{ color: meta.dot }}>
-                {meta.label}
+                {isQueued && queuePosition ? `排队第 ${queuePosition} 位` : meta.label}
               </span>
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
@@ -791,11 +794,18 @@ export function TaskPanel({
           </div>
         ) : (
           <div className="space-y-1.5">
-            {normalTasks.map(task => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                isSelected={selectedTaskId === task.id}
+            {(() => {
+              // 队列位置：按 createdAt 升序（越早创建越先执行）计算排名
+              const queuedIds = normalTasks
+                .filter(t => t.status === 'queued')
+                .sort((a, b) => a.createdAt - b.createdAt)
+                .map(t => t.id);
+              return normalTasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  isSelected={selectedTaskId === task.id}
+                  queuePosition={task.status === 'queued' ? queuedIds.indexOf(task.id) + 1 : undefined}
                 onSelect={() => {
                   onSelectTask(task.id);
                   if (task.status === 'done' || task.status === 'error') {
@@ -807,7 +817,8 @@ export function TaskPanel({
                 onCancel={() => onCancelTask(task.id)}
                 onRetry={() => onRetryTask(task)}
               />
-            ))}
+              ));
+            })()}
 
             {archivedTasks.length > 0 && (
               <div className="pt-3">

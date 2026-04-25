@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Task, TranscribeEngine, Settings } from '../types';
 import type { TranscriptSegment } from '../types';
 import { normalizeStudentKey } from '../utils/student';
@@ -295,22 +295,69 @@ async function transcribeXfyun(
 export function useTaskManager(settings: Settings, language: string) {
   const [tasks, setTasks] = useState<Task[]>(() => INITIAL_DATA.tasks);
   const [archivedStudents, setArchivedStudents] = useState<ArchivedStudentsState>(() => INITIAL_DATA.mergedArchived);
-  const stopFlags = new Map<string, boolean>();
 
-  // 每次 tasks 变化时持久化到 localStorage
-  useEffect(() => {
-    saveTasks(tasks);
-  }, [tasks]);
+  // 队列相关 ref（不触发 re-render，避免竞态）
+  const stopFlags  = useRef(new Map<string, boolean>());
+  const queueRef   = useRef<string[]>([]);          // FIFO 待执行 ID 列表
+  const runningRef = useRef(false);                 // 当前是否有任务在执行
+  const pendingRef = useRef(new Map<string, { engine: TranscribeEngine; file: File }>());
 
-  useEffect(() => {
-    saveArchivedStudents(archivedStudents);
-  }, [archivedStudents]);
+  // 让 drain 始终拿到最新 settings / language，避免闭包旧值
+  const settingsRef = useRef(settings);
+  const languageRef = useRef(language);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { languageRef.current = language; }, [language]);
+
+  useEffect(() => { saveTasks(tasks); }, [tasks]);
+  useEffect(() => { saveArchivedStudents(archivedStudents); }, [archivedStudents]);
 
   const patch = useCallback((id: string, changes: Partial<Task>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t));
   }, []);
 
-  const createTask = useCallback(async (
+  /** 从队列头取下一个任务并执行；执行完后递归调用自身处理下一个 */
+  const drain = useCallback(async () => {
+    if (runningRef.current) return;
+
+    // 跳过已被取消的任务
+    while (queueRef.current.length > 0) {
+      const head = queueRef.current[0];
+      if (stopFlags.current.get(head) !== true && pendingRef.current.has(head)) break;
+      queueRef.current.shift();
+    }
+    if (!queueRef.current.length) return;
+
+    const id = queueRef.current.shift()!;
+    const { engine, file } = pendingRef.current.get(id)!;
+    runningRef.current = true;
+
+    const s = settingsRef.current;
+    const l = languageRef.current;
+    const onProgress = (p: number) => patch(id, { progress: p });
+    const shouldStop  = () => stopFlags.current.get(id) === true;
+
+    patch(id, { status: engine === 'xfyun' ? 'uploading' : 'transcribing', progress: 5 });
+
+    try {
+      const segments = engine === 'xfyun'
+        ? await transcribeXfyun(file, s, l, onProgress, shouldStop)
+        : await transcribeWhisper(file, s, l, onProgress, shouldStop);
+      if (!stopFlags.current.get(id)) {
+        patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
+      }
+    } catch (err: unknown) {
+      if (!stopFlags.current.get(id)) {
+        patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' });
+      }
+    } finally {
+      pendingRef.current.delete(id);
+      stopFlags.current.delete(id);
+      runningRef.current = false;
+      drain(); // 处理下一个
+    }
+  }, [patch]);
+
+  const createTask = useCallback((
     studentName: string,
     topic: string,
     prompt: string,
@@ -322,47 +369,26 @@ export function useTaskManager(settings: Settings, language: string) {
       id, studentName, topic, prompt, engine,
       audioFileName: file.name,
       audioFile: file,
-      status: 'uploading',
+      status: 'queued',
       progress: 0,
       segments: [],
       error: null,
       createdAt: Date.now(),
     };
     setTasks(prev => [newTask, ...prev]);
-    stopFlags.set(id, false);
-
-    const onProgress = (p: number) => patch(id, { progress: p });
-
-    try {
-      patch(id, { status: 'uploading', progress: 5 });
-      let segments: TranscriptSegment[];
-
-      const shouldStop = () => stopFlags.get(id) === true;
-      if (engine === 'xfyun') {
-        patch(id, { status: 'uploading' });
-        segments = await transcribeXfyun(file, settings, language, onProgress, shouldStop);
-      } else {
-        patch(id, { status: 'transcribing' });
-        segments = await transcribeWhisper(file, settings, language, onProgress, shouldStop);
-      }
-
-      patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
-    } catch (err: unknown) {
-      if (stopFlags.get(id)) return;
-      patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' });
-    } finally {
-      stopFlags.delete(id);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, language, patch]);
+    stopFlags.current.set(id, false);
+    pendingRef.current.set(id, { engine, file });
+    queueRef.current.push(id);
+    drain();
+  }, [drain]);
 
   const cancelTask = useCallback((id: string) => {
-    stopFlags.set(id, true);
+    stopFlags.current.set(id, true);
     patch(id, { status: 'error', error: '已取消' });
-  }, [patch]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [patch]);
 
   const deleteTask = useCallback((id: string) => {
-    stopFlags.set(id, true);
+    stopFlags.current.set(id, true);
     setTasks(prev => {
       const removed = prev.find(t => t.id === id);
       const next = prev.filter(t => t.id !== id);
