@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
+import { usePasteFile } from '../hooks/usePasteFile';
 import { Upload, FileAudio, X, Copy, Check, Trash2, Loader2, CheckCircle, AlertCircle, Zap, Cpu } from 'lucide-react';
 import type { TranscriptSegment, TranscribeEngine } from '../types';
 import type { TranscribeStatus } from '../hooks/useFileTranscription';
@@ -79,6 +80,8 @@ export function FileUploadPanel({
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, [handleFile]);
+
+  usePasteFile(handleFile, !isActive);
 
   /** Electron 用原生 dialog，Web 用隐藏 input */
   const openFilePicker = useCallback(async () => {
@@ -161,7 +164,7 @@ export function FileUploadPanel({
               <Upload size={20} className={dragging ? 'text-sky-400' : 'text-slate-400'} />
             </div>
             <div className="text-center">
-              <p className="text-sm text-slate-300 font-medium">拖拽音频或点击选择</p>
+              <p className="text-sm text-slate-300 font-medium">拖拽 · 点击 · 或 ⌘V 粘贴</p>
               <p className="text-xs text-slate-500 mt-0.5">
                 {isXf ? 'MP3 · WAV · M4A · FLAC 等，最大 500MB' : 'MP3 · WAV · M4A · OGG 等，最大 25MB'}
               </p>

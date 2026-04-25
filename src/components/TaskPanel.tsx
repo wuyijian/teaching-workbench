@@ -8,6 +8,7 @@ import {
 import type { Task, TranscribeEngine } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
+import { usePasteFile } from '../hooks/usePasteFile';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Prompt 模板
@@ -142,7 +143,10 @@ function CreateForm({
   const isCustom = presetIdx === PROMPT_PRESETS.length - 1;
   const finalPrompt = isCustom ? customPrompt : PROMPT_PRESETS[presetIdx].value;
 
-  const handleFile = (f: File) => setFile(f);
+  const handleFile = useCallback((f: File) => setFile(f), []);
+
+  usePasteFile(handleFile);
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files[0];
@@ -300,11 +304,11 @@ function CreateForm({
                 onDrop={handleDrop}
                 onClick={openFilePicker}
               >
-                <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
-                  <Upload size={20} className="text-slate-500" />
-                  <p className="text-xs text-slate-400">拖拽或点击选择音频文件</p>
-                  <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
-                </div>
+              <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
+                <Upload size={20} className="text-slate-500" />
+                <p className="text-xs text-slate-400">拖拽 · 点击 · 或 ⌘V 粘贴音频文件</p>
+                <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+              </div>
                 {/* Web 环境保留隐藏 input；Electron 由 openFilePicker 调原生 dialog */}
                 {!isElectron && (
                   <input
