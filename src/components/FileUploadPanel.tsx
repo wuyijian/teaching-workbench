@@ -13,6 +13,7 @@ interface Props {
   whisperSegments: TranscriptSegment[];
   whisperError: string | null;
   whisperFileName: string | null;
+  whisperChunked?: boolean;
   onWhisperTranscribe: (file: File) => void;
   onWhisperReset: () => void;
   // iFlytek
@@ -30,7 +31,6 @@ interface Props {
 }
 
 const ACCEPTED = '.mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac,.mpeg,.mpga';
-const MAX_MB = 25;
 
 function formatTimestamp(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -40,6 +40,7 @@ function formatTimestamp(seconds: number) {
 
 export function FileUploadPanel({
   whisperStatus, whisperProgress, whisperSegments, whisperError, whisperFileName,
+  whisperChunked,
   onWhisperTranscribe, onWhisperReset,
   xfStatus, xfProgress, xfSegments, xfError, xfFileName, xfEstimateMs,
   onXfTranscribe, onXfReset,
@@ -67,12 +68,8 @@ export function FileUploadPanel({
 
   const handleFile = useCallback((file: File) => {
     setFileError(null);
-    if (!isXf && file.size > MAX_MB * 1024 * 1024) {
-      setFileError(`Whisper API 限制最大 ${MAX_MB}MB，请压缩后重试`);
-      return;
-    }
     onTranscribe(file);
-  }, [isXf, onTranscribe]);
+  }, [onTranscribe]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -113,7 +110,12 @@ export function FileUploadPanel({
     setEngine(e);
   };
 
-  const statusText = status === 'uploading' ? '上传中…' : status === 'transcribing' ? '转写中，请稍候…' : '';
+  const isChunking = !isXf && whisperChunked && status === 'transcribing';
+  const statusText = status === 'uploading'
+    ? '读取文件中…'
+    : isChunking
+      ? `切片转写中（${progress < 15 ? '解码音频…' : `已完成 ${Math.max(0, Math.round((progress - 10) / 85 * 100))}%`}）`
+      : status === 'transcribing' ? '转写中，请稍候…' : '';
 
   return (
     <div className="flex flex-col h-full">
@@ -144,7 +146,7 @@ export function FileUploadPanel({
           </button>
         </div>
         <span className="text-[10px] text-slate-600 ml-auto">
-          {isXf ? '支持 202 种方言 · 最长 5h' : '最大 25MB · 多语言'}
+          {isXf ? '支持 202 种方言 · 最长 5h' : '自动切片 · 支持长音频'}
         </span>
       </div>
 
@@ -166,7 +168,7 @@ export function FileUploadPanel({
             <div className="text-center">
               <p className="text-sm text-slate-300 font-medium">拖拽 · 点击 · 或 ⌘V 粘贴</p>
               <p className="text-xs text-slate-500 mt-0.5">
-                {isXf ? 'MP3 · WAV · M4A · FLAC 等，最大 500MB' : 'MP3 · WAV · M4A · OGG 等，最大 25MB'}
+                {isXf ? 'MP3 · WAV · M4A · FLAC 等，最大 500MB' : 'MP3 · WAV · M4A · FLAC 等，超大文件自动切片'}
               </p>
             </div>
           </div>
@@ -230,7 +232,11 @@ export function FileUploadPanel({
           <Loader2 size={28} className={`animate-spin ${isXf ? 'text-sky-400' : 'text-indigo-400'}`} />
           <p className="text-sm">{statusText}</p>
           <p className="text-xs text-slate-500">
-            {isXf ? `讯飞大模型 · ${language} · 教育领域优化` : `Whisper · ${language}`}
+            {isXf
+              ? `讯飞大模型 · ${language} · 教育领域优化`
+              : isChunking
+                ? `Whisper · 自动切片 · 每段10分钟 · ${language}`
+                : `Whisper · ${language}`}
           </p>
         </div>
       )}
