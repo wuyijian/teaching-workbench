@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { Task, TranscribeEngine } from '../types';
 import { normalizeStudentKey } from '../utils/student';
+import { pickAudioFileViaElectron } from '../config/app';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Prompt 模板
@@ -150,18 +151,8 @@ function CreateForm({
 
   const openFilePicker = async () => {
     if (isElectron) {
-      try {
-        const result = await window.electronAPI!.openFileDialog();
-        if (result.canceled || !result.filePaths.length) return;
-        const filePath = result.filePaths[0];
-        const url = 'file://' + filePath.replace(/\\/g, '/');
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const name = filePath.replace(/\\/g, '/').split('/').pop() || 'audio';
-        handleFile(new File([blob], name, { type: blob.type }));
-      } catch (e) {
-        setFilePickError('文件读取失败：' + String(e));
-      }
+      const f = await pickAudioFileViaElectron(setFilePickError);
+      if (f) handleFile(f);
     } else {
       inputRef.current?.click();
     }

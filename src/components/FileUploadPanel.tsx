@@ -3,6 +3,7 @@ import { Upload, FileAudio, X, Copy, Check, Trash2, Loader2, CheckCircle, AlertC
 import type { TranscriptSegment, TranscribeEngine } from '../types';
 import type { TranscribeStatus } from '../hooks/useFileTranscription';
 import type { XfyunStatus } from '../hooks/useXfyunTranscription';
+import { pickAudioFileViaElectron } from '../config/app';
 
 interface Props {
   // Whisper
@@ -82,18 +83,8 @@ export function FileUploadPanel({
   /** Electron 用原生 dialog，Web 用隐藏 input */
   const openFilePicker = useCallback(async () => {
     if (isElectron) {
-      try {
-        const result = await window.electronAPI!.openFileDialog();
-        if (result.canceled || !result.filePaths.length) return;
-        const filePath = result.filePaths[0];
-        const url = 'file://' + filePath.replace(/\\/g, '/');
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const name = filePath.replace(/\\/g, '/').split('/').pop() || 'audio';
-        handleFile(new File([blob], name, { type: blob.type }));
-      } catch (e) {
-        setFileError('文件读取失败：' + String(e));
-      }
+      const file = await pickAudioFileViaElectron(setFileError);
+      if (file) handleFile(file);
     } else {
       inputRef.current?.click();
     }
