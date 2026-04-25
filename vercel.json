@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/xfyun-api/:path*",
+      "destination": "https://office-api-ist-dx.iflyaisol.com/:path*"
+    },
+    {
+      "source": "/openai-api/:path*",
+      "destination": "https://api.openai.com/:path*"
+    }
+  ]
+}

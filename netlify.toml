@@ -1,0 +1,12 @@
+# 与根目录 vercel.json 等效：同域反代，避免浏览器 Failed to fetch（CORS）
+[[redirects]]
+  from = "/xfyun-api/*"
+  to = "https://office-api-ist-dx.iflyaisol.com/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/openai-api/*"
+  to = "https://api.openai.com/:splat"
+  status = 200
+  force = true

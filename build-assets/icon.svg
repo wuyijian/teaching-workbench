@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="230" fill="#4F46E5"/>
+  <rect x="180" y="280" width="664" height="464" rx="48" fill="white" fill-opacity="0.15"/>
+  <rect x="210" y="310" width="604" height="404" rx="36" fill="#1e1b4b"/>
+  <!-- Mic icon -->
+  <rect x="478" y="380" width="68" height="120" rx="34" fill="#818CF8"/>
+  <path d="M420 480 Q420 570 512 570 Q604 570 604 480" stroke="#818CF8" stroke-width="20" fill="none" stroke-linecap="round"/>
+  <line x1="512" y1="570" x2="512" y2="620" stroke="#818CF8" stroke-width="20" stroke-linecap="round"/>
+  <line x1="460" y1="620" x2="564" y2="620" stroke="#818CF8" stroke-width="20" stroke-linecap="round"/>
+  <!-- Sparkle -->
+  <circle cx="670" cy="400" r="12" fill="#A5B4FC"/>
+  <circle cx="700" cy="370" r="7" fill="#C7D2FE"/>
+  <circle cx="650" cy="375" r="5" fill="#C7D2FE"/>
+</svg>

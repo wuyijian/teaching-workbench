@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+/* ─── Design tokens ────────────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #0d1117;
+  --bg-s1:      #161b22;
+  --bg-s2:      #1c2128;
+  --bg-s3:      #21262d;
+  --border:     #30363d;
+  --border-light: #21262d;
+  --text-1:     #e6edf3;
+  --text-2:     #8b949e;
+  --text-3:     #6e7681;
+  --accent:     #4493f8;
+  --accent-dim: #1f3550;
+  --green:      #3fb950;
+  --green-dim:  #1a3a20;
+  --amber:      #d29922;
+  --amber-dim:  #3d2c0a;
+  --red:        #f85149;
+  --red-dim:    #3d1e1e;
+  --teal:       #2ea8a8;
+  --teal-dim:   #0d2e2e;
+  --purple:     #a371f7;
+  --purple-dim: #2a1a4a;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg-base);
+    color: var(--text-1);
+    margin: 0; padding: 0;
+    height: 100vh; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-app-region: drag;
+  }
+
+  button, input, textarea, select, a {
+    -webkit-app-region: no-drag;
+  }
+
+  #root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+.scrollbar-thin::-webkit-scrollbar { width: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* ─── Wave animation ──────────────────────────────────────────────────────── */
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50%       { transform: scaleY(1); }
+}
+.wave-bar { animation: wave 1s ease-in-out infinite; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; }
+
+/* ─── Pulse dot ───────────────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+/* ─── Shimmer skeleton ────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-s2) 25%, var(--bg-s3) 50%, var(--bg-s2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ─── Fade-in ─────────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.2s ease; }
+
+/* ─── Card hover glow ─────────────────────────────────────────────────────── */
+.card-hover {
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.card-hover:hover {
+  border-color: #388bfd40 !important;
+  box-shadow: 0 0 0 1px #388bfd20;
+}
+.card-selected {
+  border-color: #388bfd60 !important;
+  background-color: #1f3550 !important;
+  box-shadow: 0 0 0 1px #388bfd30;
+}
+
+/* ─── Markdown content ────────────────────────────────────────────────────── */
+.prose-sm p { margin-bottom: 0.5rem; }
+.prose-sm p:last-child { margin-bottom: 0; }
