@@ -37,11 +37,6 @@
     -webkit-font-smoothing: antialiased;
     font-size: 14px;
     line-height: 1.5;
-    -webkit-app-region: drag;
-  }
-
-  button, input, textarea, select, a {
-    -webkit-app-region: no-drag;
   }
 
   #root {
@@ -49,6 +44,19 @@
     display: flex;
     flex-direction: column;
   }
+}
+
+/* ─── macOS window drag region ────────────────────────────────────────────── */
+/* header 整体可拖动窗口；内部所有可交互元素恢复 no-drag */
+.drag-region { -webkit-app-region: drag; }
+.no-drag     { -webkit-app-region: no-drag; }
+.drag-region button,
+.drag-region input,
+.drag-region select,
+.drag-region textarea,
+.drag-region a,
+.drag-region label {
+  -webkit-app-region: no-drag;
 }
 
 /* ─── Scrollbar ────────────────────────────────────────────────────────────── */

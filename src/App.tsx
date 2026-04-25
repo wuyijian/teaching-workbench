@@ -74,7 +74,7 @@ export default function App() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-base)' }}>
       {/* ── Header ── */}
       <header
-        className="flex items-center justify-between shrink-0"
+        className="flex items-center justify-between shrink-0 drag-region"
         style={{
           borderBottom: '1px solid var(--border)',
           padding: '0 20px',
