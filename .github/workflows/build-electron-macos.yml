@@ -25,12 +25,9 @@ jobs:
         run: npm ci
 
       - name: Build DMG (arm64 + x64)
-        run: npm run electron:build:mac
+        run: npm run electron:build:mac -- --publish never
         env:
-          # 未接 Apple 签名时，用户首次打开需「右键 → 打开」
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # 不中断构建
-          DEBUG: 'electron-builder'
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
