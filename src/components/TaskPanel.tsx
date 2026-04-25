@@ -278,21 +278,25 @@ function CreateForm({
             </div>
           ) : (
             <div
-              className={`rounded-xl border-2 border-dashed transition-all cursor-pointer ${
+              className={`relative rounded-xl border-2 border-dashed transition-all ${
                 dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500'
               }`}
               onDragOver={e => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={handleDrop}
-              onClick={() => inputRef.current?.click()}
             >
-              <div className="flex flex-col items-center py-5 gap-2 select-none">
+              <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
                 <Upload size={20} className="text-slate-500" />
                 <p className="text-xs text-slate-400">拖拽或点击选择音频文件</p>
                 <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
               </div>
-              <input ref={inputRef} type="file" accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+              />
             </div>
           )}
         </div>

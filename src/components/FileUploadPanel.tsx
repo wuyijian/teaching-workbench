@@ -135,15 +135,14 @@ export function FileUploadPanel({
       {/* Drop zone / file info */}
       {status === 'idle' || status === 'error' ? (
         <div
-          className={`mx-1 mt-2 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
+          className={`relative mx-1 mt-2 rounded-xl border-2 border-dashed transition-all ${
             dragging ? 'border-sky-500 bg-sky-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-slate-800/30'
           }`}
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
-          onClick={() => inputRef.current?.click()}
         >
-          <div className="flex flex-col items-center justify-center py-6 gap-2 select-none">
+          <div className="flex flex-col items-center justify-center py-6 gap-2 select-none pointer-events-none">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${dragging ? 'bg-sky-500/20' : 'bg-slate-700/60'}`}>
               <Upload size={20} className={dragging ? 'text-sky-400' : 'text-slate-400'} />
             </div>
@@ -154,7 +153,14 @@ export function FileUploadPanel({
               </p>
             </div>
           </div>
-          <input ref={inputRef} type="file" accept={ACCEPTED} className="hidden" onChange={handleInputChange} />
+          {/* 透明 input 铺满整个区域，直接响应点击，不依赖 .click() */}
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPTED}
+            onChange={handleInputChange}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
         </div>
       ) : (
         <div className="mx-1 mt-2 flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 border border-slate-700/50">
