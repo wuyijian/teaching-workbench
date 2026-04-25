@@ -50,6 +50,8 @@ export function FileUploadPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const isElectron = !!window.electronAPI;
+
   const isXf = engine === 'xfyun';
   const status = isXf ? xfStatus : whisperStatus;
   const progress = isXf ? xfProgress : whisperProgress;
@@ -76,6 +78,26 @@ export function FileUploadPanel({
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, [handleFile]);
+
+  /** Electron 用原生 dialog，Web 用隐藏 input */
+  const openFilePicker = useCallback(async () => {
+    if (isElectron) {
+      try {
+        const result = await window.electronAPI!.openFileDialog();
+        if (result.canceled || !result.filePaths.length) return;
+        const filePath = result.filePaths[0];
+        const url = 'file://' + filePath.replace(/\\/g, '/');
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const name = filePath.replace(/\\/g, '/').split('/').pop() || 'audio';
+        handleFile(new File([blob], name, { type: blob.type }));
+      } catch (e) {
+        setFileError('文件读取失败：' + String(e));
+      }
+    } else {
+      inputRef.current?.click();
+    }
+  }, [isElectron, handleFile]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -135,12 +157,13 @@ export function FileUploadPanel({
       {/* Drop zone / file info */}
       {status === 'idle' || status === 'error' ? (
         <div
-          className={`relative mx-1 mt-2 rounded-xl border-2 border-dashed transition-all ${
+          className={`relative mx-1 mt-2 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
             dragging ? 'border-sky-500 bg-sky-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-slate-800/30'
           }`}
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
+          onClick={openFilePicker}
         >
           <div className="flex flex-col items-center justify-center py-6 gap-2 select-none pointer-events-none">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${dragging ? 'bg-sky-500/20' : 'bg-slate-700/60'}`}>
@@ -153,14 +176,16 @@ export function FileUploadPanel({
               </p>
             </div>
           </div>
-          {/* 透明 input 铺满整个区域，直接响应点击，不依赖 .click() */}
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPTED}
-            onChange={handleInputChange}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
+          {/* Web 环境保留隐藏 input；Electron 由 openFilePicker 调原生 dialog */}
+          {!isElectron && (
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPTED}
+              onChange={handleInputChange}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+          )}
         </div>
       ) : (
         <div className="mx-1 mt-2 flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 border border-slate-700/50">

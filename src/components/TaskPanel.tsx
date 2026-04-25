@@ -133,7 +133,10 @@ function CreateForm({
   const [engine, setEngine] = useState<TranscribeEngine>(hasXfCredentials ? 'xfyun' : 'whisper');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [filePickError, setFilePickError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const isElectron = !!window.electronAPI;
 
   const isCustom = presetIdx === PROMPT_PRESETS.length - 1;
   const finalPrompt = isCustom ? customPrompt : PROMPT_PRESETS[presetIdx].value;
@@ -143,6 +146,25 @@ function CreateForm({
     e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files[0];
     if (f) handleFile(f);
+  };
+
+  const openFilePicker = async () => {
+    if (isElectron) {
+      try {
+        const result = await window.electronAPI!.openFileDialog();
+        if (result.canceled || !result.filePaths.length) return;
+        const filePath = result.filePaths[0];
+        const url = 'file://' + filePath.replace(/\\/g, '/');
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const name = filePath.replace(/\\/g, '/').split('/').pop() || 'audio';
+        handleFile(new File([blob], name, { type: blob.type }));
+      } catch (e) {
+        setFilePickError('文件读取失败：' + String(e));
+      }
+    } else {
+      inputRef.current?.click();
+    }
   };
 
   const canSubmit = studentName.trim() && file && finalPrompt.trim();
@@ -277,27 +299,36 @@ function CreateForm({
               </button>
             </div>
           ) : (
-            <div
-              className={`relative rounded-xl border-2 border-dashed transition-all ${
-                dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500'
-              }`}
-              onDragOver={e => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
-                <Upload size={20} className="text-slate-500" />
-                <p className="text-xs text-slate-400">拖拽或点击选择音频文件</p>
-                <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+            <>
+              <div
+                className={`relative rounded-xl border-2 border-dashed transition-all cursor-pointer ${
+                  dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500'
+                }`}
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                onClick={openFilePicker}
+              >
+                <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
+                  <Upload size={20} className="text-slate-500" />
+                  <p className="text-xs text-slate-400">拖拽或点击选择音频文件</p>
+                  <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+                </div>
+                {/* Web 环境保留隐藏 input；Electron 由 openFilePicker 调原生 dialog */}
+                {!isElectron && (
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                  />
+                )}
               </div>
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
-              />
-            </div>
+              {filePickError && (
+                <p className="text-xs text-red-400 mt-1">{filePickError}</p>
+              )}
+            </>
           )}
         </div>
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeTheme, session, dialog, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
@@ -140,6 +140,18 @@ function buildMenu() {
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// 原生文件选择对话框，绕过 macOS 对渲染进程 input[type=file] 的限制
+ipcMain.handle('dialog:openAudioFile', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: '音频文件', extensions: ['mp3', 'mp4', 'wav', 'm4a', 'ogg', 'webm', 'flac', 'aac', 'mpeg', 'mpga'] },
+      { name: '所有文件', extensions: ['*'] },
+    ],
+  });
+  return result; // { canceled: boolean, filePaths: string[] }
+});
 
 app.whenReady().then(() => {
   setupApiRequestHeaders(session.defaultSession);

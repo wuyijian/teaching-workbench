@@ -21,6 +21,8 @@ interface ImportMeta {
 interface ElectronAPI {
   platform: string
   versions: { electron: string; node: string }
+  /** 调起系统原生文件选择对话框 */
+  openFileDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>
 }
 
 interface Window {
