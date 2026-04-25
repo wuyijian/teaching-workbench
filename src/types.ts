@@ -31,7 +31,7 @@ export interface Settings {
 
 export type TranscribeEngine = 'whisper' | 'xfyun';
 
-export type TaskStatus = 'queued' | 'pending' | 'uploading' | 'transcribing' | 'done' | 'error';
+export type TaskStatus = 'queued' | 'uploading' | 'transcribing' | 'done' | 'error';
 
 export interface Task {
   id: string;

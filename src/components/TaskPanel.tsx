@@ -83,7 +83,6 @@ function formatSeg(seconds: number) {
 
 const STATUS_META: Record<Task['status'], { label: string; dot: string }> = {
   queued:       { label: '排队中', dot: '#6e7681' },
-  pending:      { label: '等待中', dot: '#6e7681' },
   uploading:    { label: '上传中', dot: '#d29922' },
   transcribing: { label: '转写中', dot: '#4493f8' },
   done:         { label: '完成',   dot: '#3fb950' },
