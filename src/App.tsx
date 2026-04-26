@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Settings as SettingsIcon, BookOpen } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, LogOut, User } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
 import { TaskPanel } from './components/TaskPanel';
 import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
@@ -40,6 +41,7 @@ function loadSettings(): Settings {
 }
 
 export default function App() {
+  const { user, authEnabled, signOut } = useAuth();
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [language, setLanguage] = useState(settings.language || 'zh-CN');
@@ -102,6 +104,30 @@ export default function App() {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 no-drag">
+          {/* 用户状态（Web 模式 + 已配置 Supabase） */}
+          {authEnabled && user && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
+                style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+                <User size={11} style={{ color: 'var(--accent)' }} />
+                <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user.email}
+                </span>
+              </div>
+              <button
+                onClick={signOut}
+                title="退出登录"
+                className="flex items-center justify-center p-1.5 rounded-lg transition-all"
+                style={{ color: 'var(--text-3)', border: '1px solid var(--border)', background: 'transparent' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--red)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; }}
+              >
+                <LogOut size={12} />
+              </button>
+            </div>
+          )}
+
         <button
           onClick={() => setShowSettings(true)}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
@@ -130,6 +156,7 @@ export default function App() {
           <SettingsIcon size={13} />
           {needsConfig ? '配置服务' : '设置'}
         </button>
+        </div>
       </header>
 
       {/* ── Main ── */}

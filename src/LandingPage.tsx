@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import {
   Mic, FileAudio, Sparkles, Download, Check, X,
   ChevronRight, Zap, BookOpen, MessageSquare,
-  Shield, Copy, CheckCheck,
+  Shield, Copy, CheckCheck, LogIn, UserPlus, LogOut, User,
 } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
+
+type AuthModalMode = 'login' | 'register' | null;
 
 // ─── 商业配置（修改此处即可）────────────────────────────────────────────────
 const BIZ = {
@@ -107,9 +111,12 @@ const C = {
 };
 
 export function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [payModal, setPayModal] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { user, authEnabled, signOut } = useAuth();
+
+  const [scrolled, setScrolled]       = useState(false);
+  const [payModal, setPayModal]       = useState<string | null>(null);
+  const [authModal, setAuthModal]     = useState<AuthModalMode>(null);
+  const [copied, setCopied]           = useState(false);
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 24);
@@ -146,14 +153,40 @@ export function LandingPage() {
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: -0.3 }}>语文教学工作台</span>
           <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: C.accentDim, color: C.accent, border: `1px solid ${C.accentBorder}`, fontWeight: 700 }}>Beta</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {[['#features', '功能'], ['#pricing', '定价'], ['#download', '下载']].map(([href, label]) => (
             <a key={href} href={href} style={{ fontSize: 13, color: C.text2, textDecoration: 'none', padding: '6px 10px', borderRadius: 6 }}>{label}</a>
           ))}
-          <button onClick={goToApp} style={{
-            fontSize: 13, padding: '7px 16px', borderRadius: 8, fontWeight: 600, cursor: 'pointer',
-            background: C.accent, color: '#fff', border: 'none', marginLeft: 8,
-          }}>进入工作台</button>
+          <div style={{ width: 1, height: 18, background: C.border, margin: '0 6px' }} />
+          {authEnabled ? (
+            user ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text2, padding: '6px 10px', borderRadius: 8, background: C.bgCard, border: `1px solid ${C.border}` }}>
+                  <User size={12} style={{ color: C.accent }} />
+                  <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+                </div>
+                <button onClick={goToApp} style={{ fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none' }}>
+                  进入工作台
+                </button>
+                <button onClick={signOut} title="退出登录" style={{ padding: '7px 8px', borderRadius: 8, cursor: 'pointer', background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
+                  <LogOut size={13} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setAuthModal('login')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.border}` }}>
+                  <LogIn size={13} /> 登录
+                </button>
+                <button onClick={() => setAuthModal('register')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none' }}>
+                  <UserPlus size={13} /> 注册
+                </button>
+              </>
+            )
+          ) : (
+            <button onClick={goToApp} style={{ fontSize: 13, padding: '7px 16px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none' }}>
+              进入工作台
+            </button>
+          )}
         </div>
       </nav>
 
@@ -173,13 +206,32 @@ export function LandingPage() {
         </p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={goToApp} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontSize: 15, padding: '13px 30px', borderRadius: 10, fontWeight: 700, cursor: 'pointer',
-            background: C.accent, color: '#fff', border: 'none',
-          }}>
-            免费开始使用 <ChevronRight size={15} />
-          </button>
+          {authEnabled && !user ? (
+            <>
+              <button onClick={() => setAuthModal('register')} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                fontSize: 15, padding: '13px 30px', borderRadius: 10, fontWeight: 700, cursor: 'pointer',
+                background: C.accent, color: '#fff', border: 'none',
+              }}>
+                <UserPlus size={15} /> 免费注册
+              </button>
+              <button onClick={() => setAuthModal('login')} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                fontSize: 15, padding: '13px 30px', borderRadius: 10, fontWeight: 600, cursor: 'pointer',
+                background: 'transparent', color: C.text1, border: `1px solid ${C.borderBright}`,
+              }}>
+                <LogIn size={14} /> 已有账号登录
+              </button>
+            </>
+          ) : (
+            <button onClick={goToApp} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontSize: 15, padding: '13px 30px', borderRadius: 10, fontWeight: 700, cursor: 'pointer',
+              background: C.accent, color: '#fff', border: 'none',
+            }}>
+              {user ? '进入工作台' : '免费开始使用'} <ChevronRight size={15} />
+            </button>
+          )}
           <a href="#download" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             fontSize: 15, padding: '13px 30px', borderRadius: 10, fontWeight: 600,
@@ -410,6 +462,15 @@ export function LandingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Auth Modal */}
+      {authModal && (
+        <AuthModal
+          initialMode={authModal}
+          onClose={() => setAuthModal(null)}
+          onSuccess={goToApp}
+        />
       )}
     </div>
   );
