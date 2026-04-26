@@ -21,6 +21,7 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [success, setSuccess]     = useState(false);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
   const [showWxModal, setShowWxModal] = useState(false);
 
   const wechatEnabled = !!import.meta.env.VITE_WECHAT_APP_ID;
@@ -29,6 +30,7 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
     setMode(m);
     setError(null);
     setSuccess(false);
+    setNeedsConfirm(false);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,24 +39,24 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
     setLoading(true);
     setError(null);
 
-    const err = mode === 'login'
-      ? await signIn(email.trim(), password)
-      : await signUp(email.trim(), password);
-
-    setLoading(false);
-
-    if (err) {
-      setError(err);
-      return;
-    }
-
-    if (mode === 'register') {
-      // Supabase 默认需要验证邮件；如果关闭了 email confirm 则直接登录成功
-      setSuccess(true);
-      setTimeout(() => { onSuccess?.(); onClose(); }, 1500);
-    } else {
+    if (mode === 'login') {
+      const err = await signIn(email.trim(), password);
+      setLoading(false);
+      if (err) { setError(err); return; }
       onSuccess?.();
       onClose();
+    } else {
+      const result = await signUp(email.trim(), password);
+      setLoading(false);
+      if (typeof result === 'string') { setError(result); return; }
+      if (result?.needsConfirm) {
+        // Supabase 开启了邮件验证，需要用户去收邮件
+        setNeedsConfirm(true);
+      } else {
+        // 已关闭邮件验证，直接登录成功
+        setSuccess(true);
+        setTimeout(() => { onSuccess?.(); onClose(); }, 1200);
+      }
     }
   };
 
@@ -172,11 +174,24 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
             </div>
           )}
 
-          {/* Success */}
+          {/* 需验证邮件 */}
+          {needsConfirm && (
+            <div style={{ fontSize: 13, background: '#1a2a1a', border: '1px solid #2a4d2a', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--green)', marginBottom: 4 }}>
+                <CheckCircle2 size={14} /> 注册成功，请验证邮箱
+              </div>
+              <p style={{ color: 'var(--text-3)', margin: 0 }}>
+                验证邮件已发送至 <strong style={{ color: 'var(--text-2)' }}>{email}</strong>，
+                点击邮件中的链接后即可登录。
+              </p>
+            </div>
+          )}
+
+          {/* 直接登录成功 */}
           {success && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid #1e4d27', borderRadius: 8, padding: '9px 12px' }}>
               <CheckCircle2 size={14} />
-              注册成功！请查收验证邮件并点击确认链接
+              注册并登录成功，正在跳转…
             </div>
           )}
 

@@ -21,6 +21,27 @@ function mapLanguage(lang: string): string {
   return 'autodialect';
 }
 
+// ── 平台 API Key（优先读取平台环境变量，回退到用户自填） ──────────────────────
+function resolveXfCredentials(settings: Settings) {
+  return {
+    xfAppId:          import.meta.env.VITE_XF_APP_ID          || settings.xfAppId,
+    xfAccessKeyId:    import.meta.env.VITE_XF_ACCESS_KEY_ID   || settings.xfAccessKeyId,
+    xfAccessKeySecret:import.meta.env.VITE_XF_ACCESS_KEY_SECRET|| settings.xfAccessKeySecret,
+  };
+}
+
+/** 获取音频文件时长（分钟），用于扣减配额 */
+async function getAudioDurationMinutes(file: File): Promise<number> {
+  return new Promise(resolve => {
+    const audio = document.createElement('audio');
+    const url = URL.createObjectURL(file);
+    const cleanup = () => URL.revokeObjectURL(url);
+    audio.addEventListener('loadedmetadata', () => { cleanup(); resolve(audio.duration / 60); });
+    audio.addEventListener('error',          () => { cleanup(); resolve(0); });
+    audio.src = url;
+  });
+}
+
 export function useXfyunTranscription(settings: Settings) {
   const [status, setStatus] = useState<XfyunStatus>('idle');
   const [progress, setProgress] = useState(0);
@@ -28,17 +49,19 @@ export function useXfyunTranscription(settings: Settings) {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [estimateMs, setEstimateMs] = useState<number | null>(null);
+  const [durationMinutes, setDurationMinutes] = useState<number>(0);
 
   const stopRef = useRef(false);
 
   // ── 1. 上传音频，获取 orderId ──
   async function uploadAudio(file: File, language: string): Promise<string> {
+    const { xfAppId, xfAccessKeyId, xfAccessKeySecret: _ } = resolveXfCredentials(settings);
     const dateTime = getDateTime();
     const signatureRandom = randomStr(16);
 
     const params: Record<string, string> = {
-      appId: settings.xfAppId,
-      accessKeyId: settings.xfAccessKeyId,
+      appId: xfAppId,
+      accessKeyId: xfAccessKeyId,
       dateTime,
       signatureRandom,
       fileSize: String(file.size),
@@ -93,15 +116,16 @@ export function useXfyunTranscription(settings: Settings) {
       if (stopRef.current) throw new Error('已取消');
 
       const dateTime = getDateTime();
+      const { xfAccessKeyId, xfAccessKeySecret } = resolveXfCredentials(settings);
       const params: Record<string, string> = {
-        accessKeyId: settings.xfAccessKeyId,
+        accessKeyId: xfAccessKeyId,
         dateTime,
         signatureRandom,
         orderId,
         resultType: 'transfer',
       };
 
-      const signature = await buildSignature(params, settings.xfAccessKeySecret);
+      const signature = await buildSignature(params, xfAccessKeySecret);
       const query = Object.entries(params)
         .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
         .join('&');
@@ -135,9 +159,14 @@ export function useXfyunTranscription(settings: Settings) {
     }
   }
 
-  const transcribe = useCallback(async (file: File, language: string) => {
-    if (!settings.xfAppId || !settings.xfAccessKeyId || !settings.xfAccessKeySecret) {
-      setError('请先在设置中填写讯飞 AppID、AccessKeyID 和 AccessKeySecret');
+  const transcribe = useCallback(async (
+    file: File,
+    language: string,
+    onComplete?: (durationMinutes: number) => void,
+  ) => {
+    const { xfAppId, xfAccessKeyId, xfAccessKeySecret } = resolveXfCredentials(settings);
+    if (!xfAppId || !xfAccessKeyId || !xfAccessKeySecret) {
+      setError('平台转写服务未配置，请联系管理员');
       setStatus('error');
       return;
     }
@@ -147,8 +176,13 @@ export function useXfyunTranscription(settings: Settings) {
     setSegments([]);
     setProgress(0);
     setEstimateMs(null);
+    setDurationMinutes(0);
     setFileName(file.name);
     setStatus('uploading');
+
+    // 提前获取音频时长，用于配额扣减
+    const durMins = await getAudioDurationMinutes(file);
+    setDurationMinutes(durMins);
 
     try {
       setProgress(10);
@@ -160,6 +194,9 @@ export function useXfyunTranscription(settings: Settings) {
       setProgress(100);
       setSegments(parseXfyunResult(orderResult));
       setStatus('done');
+
+      // 转写成功后回调，让调用方扣减配额
+      onComplete?.(durMins);
     } catch (err: unknown) {
       if (stopRef.current) return;
       const msg = err instanceof Error ? err.message : '转写失败';
@@ -177,7 +214,8 @@ export function useXfyunTranscription(settings: Settings) {
     setError(null);
     setFileName(null);
     setEstimateMs(null);
+    setDurationMinutes(0);
   }, []);
 
-  return { status, progress, segments, error, fileName, estimateMs, transcribe, reset };
+  return { status, progress, segments, error, fileName, estimateMs, durationMinutes, transcribe, reset };
 }

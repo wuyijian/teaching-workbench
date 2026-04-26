@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { LandingPage } from './LandingPage.tsx'
 import { WechatCallbackPage } from './pages/WechatCallbackPage.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
+import { SubscriptionProvider } from './context/SubscriptionContext.tsx'
 import { isElectronTarget } from './config/app.ts'
 
 // 路由判断（客户端路由，无需 react-router）
@@ -26,7 +27,9 @@ function Root() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <Root />
+      <SubscriptionProvider>
+        <Root />
+      </SubscriptionProvider>
     </AuthProvider>
   </StrictMode>,
 )

@@ -23,17 +23,30 @@ const WECHAT_APP_SECRET = Deno.env.get('WECHAT_APP_SECRET')!;
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const cors = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-};
+// 允许的前端域名（生产环境改为你的实际域名，多个用逗号分隔）
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map(s => s.trim()).filter(Boolean);
+
+function corsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  // 开发时允许 localhost；生产时通过环境变量配置
+  const allowed =
+    ALLOWED_ORIGINS.length === 0 ||          // 未配置则宽松（方便开发）
+    ALLOWED_ORIGINS.includes(origin) ||
+    origin.startsWith('http://localhost') ||
+    origin.startsWith('http://127.0.0.1');
+  return {
+    'Access-Control-Allow-Origin':  allowed ? origin : 'null',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Vary': 'Origin',
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, corsH: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...cors, 'Content-Type': 'application/json' },
+    headers: { ...corsH, 'Content-Type': 'application/json' },
   });
 }
 
@@ -70,26 +83,28 @@ async function wxGetUserInfo(accessToken: string, openid: string): Promise<WxUse
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
+  const cors = corsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: cors });
   }
 
   try {
     const { code } = await req.json() as { code: string };
-    if (!code) return json({ error: '缺少 code 参数' }, 400);
+    if (!code) return json({ error: '缺少 code 参数' }, 400, cors);
 
     // 1. 换取 access_token
     const tokenData = await wxGetToken(code);
     if (!tokenData.access_token || !tokenData.openid) {
       console.error('WeChat token error:', tokenData);
-      return json({ error: `微信授权失败: ${tokenData.errmsg ?? '未知错误'}` }, 400);
+      return json({ error: `微信授权失败: ${tokenData.errmsg ?? '未知错误'}` }, 400, cors);
     }
 
     // 2. 获取用户信息
     const wxUser = await wxGetUserInfo(tokenData.access_token, tokenData.openid);
     if (wxUser.errcode) {
       console.error('WeChat userinfo error:', wxUser);
-      return json({ error: `获取微信用户信息失败: ${wxUser.errmsg}` }, 400);
+      return json({ error: `获取微信用户信息失败: ${wxUser.errmsg}` }, 400, cors);
     }
 
     const openid   = wxUser.openid;
@@ -121,14 +136,14 @@ serve(async (req) => {
       // 新用户：创建 Supabase auth 账号
       const syntheticEmail = `wx_${openid}@wx.auth.internal`;
       const { data: newUser, error: createErr } = await admin.auth.admin.createUser({
-        email:            syntheticEmail,
-        email_confirm:    true,   // 跳过邮件验证
-        user_metadata:    { wechat_openid: openid, nickname, avatar_url: avatar, provider: 'wechat' },
+        email:         syntheticEmail,
+        email_confirm: true,   // 跳过邮件验证
+        user_metadata: { wechat_openid: openid, nickname, avatar_url: avatar, provider: 'wechat' },
       });
 
       if (createErr || !newUser.user) {
         console.error('Create user error:', createErr);
-        return json({ error: '创建账号失败' }, 500);
+        return json({ error: '创建账号失败' }, 500, cors);
       }
       userId = newUser.user.id;
 
@@ -144,28 +159,22 @@ serve(async (req) => {
     // 5. 生成 magic-link token（不会发送邮件，直接返回 hashed_token）
     const syntheticEmail = `wx_${openid}@wx.auth.internal`;
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-      type:  'magiclink',
-      email: syntheticEmail,
+      type:    'magiclink',
+      email:   syntheticEmail,
       options: { redirectTo: '/' },
     });
 
     if (linkErr || !linkData) {
       console.error('GenerateLink error:', linkErr);
-      return json({ error: '生成登录令牌失败' }, 500);
+      return json({ error: '生成登录令牌失败' }, 500, cors);
     }
 
     const token_hash = linkData.properties?.hashed_token;
 
-    return json({
-      ok: true,
-      token_hash,
-      email: syntheticEmail,
-      nickname,
-      avatar,
-    });
+    return json({ ok: true, token_hash, email: syntheticEmail, nickname, avatar }, 200, cors);
 
   } catch (err) {
     console.error('Unhandled error:', err);
-    return json({ error: String(err) }, 500);
+    return json({ error: String(err) }, 500, cors);
   }
 });

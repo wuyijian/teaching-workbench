@@ -24,19 +24,20 @@ export function WechatCallbackPage() {
     const code   = params.get('code');
     const state  = params.get('state');
 
-    // 校验 state 防 CSRF
-    const savedState = sessionStorage.getItem('wx_oauth_state');
     if (!code) {
       setPhase('error');
       setMessage('微信未返回授权码，请重试');
       return;
     }
-    if (state && savedState && state !== savedState) {
+
+    // CSRF 防护：state 必须存在且与本地保存的一致
+    const savedState = sessionStorage.getItem('wx_oauth_state');
+    sessionStorage.removeItem('wx_oauth_state');
+    if (!savedState || !state || state !== savedState) {
       setPhase('error');
-      setMessage('安全校验失败（state 不匹配），请重新扫码');
+      setMessage('安全校验失败（state 不匹配），请重新扫码登录');
       return;
     }
-    sessionStorage.removeItem('wx_oauth_state');
 
     if (!supabase) {
       setPhase('error');

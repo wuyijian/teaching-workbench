@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Key, Globe, Cpu, Eye, EyeOff, Zap } from 'lucide-react';
+import { X, Key, Globe, Cpu, Eye, EyeOff, Zap, FileText, RotateCcw } from 'lucide-react';
 import { isElectronTarget, defaultOpenAiCompatibleBase } from '../config/app';
+import { FEEDBACK_PROMPT } from './TaskPanel';
 import type { Settings } from '../types';
 
 interface Props {
@@ -31,7 +32,14 @@ const PRESETS = [
   { label: '智谱 AI', url: 'https://open.bigmodel.cn/api/paas/v4' },
 ];
 
-type Tab = 'ai' | 'xfyun';
+type Tab = 'ai' | 'xfyun' | 'prompt';
+
+// 平台已托管讯飞 Key 时，不再需要用户填写
+const platformXfReady = !!(
+  import.meta.env.VITE_XF_APP_ID &&
+  import.meta.env.VITE_XF_ACCESS_KEY_ID &&
+  import.meta.env.VITE_XF_ACCESS_KEY_SECRET
+);
 
 export function SettingsModal({ settings, onSave, onClose }: Props) {
   const [form, setForm] = useState<Settings>(settings);
@@ -49,7 +57,8 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-[#1a2030] border border-slate-700 rounded-2xl w-full max-w-md mx-4 shadow-2xl"
+        className="bg-[#1a2030] border border-slate-700 rounded-2xl w-full mx-4 shadow-2xl"
+        style={{ maxWidth: tab === 'prompt' ? 560 : 448 }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -70,13 +79,23 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
           >
             <Cpu size={11} /> AI 助手
           </button>
+          {!platformXfReady && (
+            <button
+              onClick={() => setTab('xfyun')}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                tab === 'xfyun' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Zap size={11} /> 讯飞转写
+            </button>
+          )}
           <button
-            onClick={() => setTab('xfyun')}
+            onClick={() => setTab('prompt')}
             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-              tab === 'xfyun' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'text-slate-400 hover:text-slate-200'
+              tab === 'prompt' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Zap size={11} /> 讯飞转写
+            <FileText size={11} /> 反馈 Prompt
           </button>
         </div>
 
@@ -167,7 +186,7 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
                 </div>
               </div>
             </>
-          ) : (
+          ) : tab === 'xfyun' ? (
             <>
               {/* iFlytek settings */}
               <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg px-3 py-2.5 text-xs text-sky-300 space-y-0.5">
@@ -224,7 +243,39 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
                 凭证仅保存在本地浏览器中，不会上传到任何服务器。
               </p>
             </>
-          )}
+          ) : tab === 'prompt' ? (
+            <>
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2.5 text-xs text-emerald-300 space-y-1">
+                <p className="font-medium">自定义课堂反馈 Prompt</p>
+                <p className="text-emerald-400/70 leading-relaxed">
+                  此 Prompt 将发送给 AI，控制反馈的格式、风格和重点。支持所有任务（工作台单次生成 + AI 助手批量生成）。
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs text-slate-400 font-medium">Prompt 内容</label>
+                  <button
+                    onClick={() => update('feedbackPrompt', FEEDBACK_PROMPT)}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-emerald-400 transition-colors"
+                    title="恢复默认 Prompt"
+                  >
+                    <RotateCcw size={10} /> 恢复默认
+                  </button>
+                </div>
+                <textarea
+                  value={form.feedbackPrompt ?? FEEDBACK_PROMPT}
+                  onChange={e => update('feedbackPrompt', e.target.value)}
+                  rows={12}
+                  className="w-full bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-3 py-2.5 text-xs text-slate-200 outline-none transition-colors resize-none leading-relaxed font-mono"
+                  spellCheck={false}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {(form.feedbackPrompt ?? FEEDBACK_PROMPT).length} 字符 · 课堂转写内容将自动追加在此 Prompt 之后
+                </p>
+              </div>
+            </>
+          ) : null}
         </div>
 
         {/* Footer */}

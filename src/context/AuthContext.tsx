@@ -10,7 +10,8 @@ export interface AuthContextValue {
   /** Supabase 未配置时为 false（Electron 桌面端） */
   authEnabled: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string) => Promise<string | null>;
+  /** 返回 null 表示成功；返回 { needsConfirm: true } 表示需验证邮件 */
+  signUp: (email: string, password: string) => Promise<string | { needsConfirm: true } | null>;
   signOut: () => Promise<void>;
 }
 
@@ -52,10 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error ? localizeError(error.message) : null;
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string): Promise<string | null> => {
+  const signUp = useCallback(async (email: string, password: string): Promise<string | { needsConfirm: true } | null> => {
     if (!supabase) return null;
-    const { error } = await supabase.auth.signUp({ email, password });
-    return error ? localizeError(error.message) : null;
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return localizeError(error.message);
+    // Supabase 开启邮件验证时，session 为 null，identities 非空
+    const needsConfirm = !data.session && (data.user?.identities?.length ?? 0) > 0;
+    return needsConfirm ? { needsConfirm: true } : null;
   }, []);
 
   const signOut = useCallback(async () => {

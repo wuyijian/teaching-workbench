@@ -27,6 +27,8 @@ export interface Settings {
   xfAppId: string;
   xfAccessKeyId: string;
   xfAccessKeySecret: string;
+  // 课堂反馈 Prompt（为空时使用内置默认值）
+  feedbackPrompt?: string;
 }
 
 export type TranscribeEngine = 'xfyun';

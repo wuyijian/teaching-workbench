@@ -7,6 +7,12 @@ import {
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT } from './TaskPanel';
+
+// Resolve the effective prompt: settings override → built-in default
+export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
+  const p = settings.feedbackPrompt?.trim();
+  return p && p.length > 0 ? p : FEEDBACK_PROMPT;
+}
 import { resolveApiBase } from '../config/urls';
 
 interface FeedbackMessage {
@@ -214,7 +220,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
     const meta = [`日期：${dateStr}`, `学生姓名：${selectedTask.studentName}`, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
     const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
-    const userContent = `${FEEDBACK_PROMPT}\n\n---\n${meta}${notesBlock}\n\n课堂录音转写内容：\n${transcript}`;
+    const prompt = effectiveFeedbackPrompt(settings);
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}\n\n课堂录音转写内容：\n${transcript}`;
 
     try {
       await streamAI(

@@ -19,18 +19,42 @@ const BIZ = {
 
 const PLANS = [
   {
-    name: '免费版', price: '¥0', period: '', desc: '立即体验核心功能',
-    features: ['每月 5 次音频转写', '每月 10 次 AI 反馈', 'Web 端使用', '基础 Markdown 导出'],
-    cta: '免费使用', action: 'app' as const,
+    name: '探索版', price: '¥0', period: '', desc: '无需配置，开箱即用',
+    features: [
+      '每月 3 小时转写配额（约 2-3 节课）',
+      '每月 10 次 AI 反馈生成',
+      '5 个学生档案',
+      '基础 Agent 对话',
+      '无需填写任何 API Key',
+    ],
+    cta: '免费开始', action: 'app' as const,
   },
   {
-    name: '教师专业版', price: '¥29', period: '/月', desc: '适合个人教师日常使用',
-    features: ['无限次音频转写', '无限次 AI 反馈生成', 'macOS & Windows 桌面端', '2 小时以上长音频', '现场麦克风录音', '补充信息辅助生成'],
-    cta: '立即购买', action: 'pay' as const, highlight: true, badge: '最受欢迎',
+    name: '专业版', price: '¥199', period: '/月', desc: '适合个人教师高频使用',
+    subPrice: '¥1,788/年（省 ¥600）',
+    features: [
+      '每月 20 小时转写配额（约 16 节课）',
+      '无限 AI 反馈生成',
+      '无限学生档案',
+      '完整 Agent 模式',
+      '自定义反馈 Prompt 模板',
+      '超额转写 ¥0.10/分钟',
+      '邮件优先支持',
+    ],
+    cta: '立即升级', action: 'pay' as const, highlight: true, badge: '主推',
   },
   {
-    name: '学校机构版', price: '¥99', period: '/月', desc: '适合学校、教培机构',
-    features: ['最多 20 位教师账号', '管理员控制台', '包含专业版全部功能', '合规报告 & 正规发票', '专属技术支持'],
+    name: '机构版', price: '¥599', period: '/月', desc: '适合学校、培训机构',
+    subPrice: '¥5,388/年（省 ¥1,200）',
+    features: [
+      '每月 60 小时转写配额（约 48 节课）',
+      '1-5 个教师账号',
+      '团队管理后台 + 用量统计',
+      '专业版全部功能',
+      '定制化反馈模板库',
+      '超额转写 ¥0.08/分钟',
+      '专属客服 + 电话支持',
+    ],
     cta: '联系购买', action: 'pay' as const,
   },
 ];
@@ -322,9 +346,14 @@ export function LandingPage() {
                   <h3 style={{ fontSize: 16, fontWeight: 700, color: C.text1, marginBottom: 4 }}>{plan.name}</h3>
                   <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>{plan.desc}</p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, margin: '20px 0 24px' }}>
-                  <span style={{ fontSize: 44, fontWeight: 900, letterSpacing: -2, color: plan.highlight ? '#a8c8ff' : C.text1 }}>{plan.price}</span>
-                  <span style={{ fontSize: 14, color: C.text3 }}>{plan.period}</span>
+                <div style={{ margin: '20px 0 24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                    <span style={{ fontSize: 44, fontWeight: 900, letterSpacing: -2, color: plan.highlight ? '#a8c8ff' : C.text1 }}>{plan.price}</span>
+                    <span style={{ fontSize: 14, color: C.text3 }}>{plan.period}</span>
+                  </div>
+                  {'subPrice' in plan && plan.subPrice && (
+                    <p style={{ fontSize: 11, color: C.text3, margin: '4px 0 0', opacity: 0.8 }}>{plan.subPrice as string}</p>
+                  )}
                 </div>
                 <div style={{ height: 1, background: plan.highlight ? '#243360' : C.border, marginBottom: 20 }} />
                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>

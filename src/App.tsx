@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Users, Layout } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Users, Layout, Bot, Clock } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
+import { useSubscription, PLAN_CONFIG } from './context/SubscriptionContext';
 import { TaskPanel } from './components/TaskPanel';
 import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { StudentArchive } from './components/StudentArchive';
+import { AgentChat } from './components/AgentChat';
 
-type AppMode = 'workbench' | 'archive';
+type AppMode = 'workbench' | 'archive' | 'agent';
 import { useTaskManager } from './hooks/useTaskManager';
 import { defaultOpenAiCompatibleBase, isElectronTarget, isRunningInElectron } from './config/app';
 import type { Settings } from './types';
@@ -45,6 +47,7 @@ function loadSettings(): Settings {
 
 export default function App() {
   const { user, authEnabled, signOut } = useAuth();
+  const subscription = useSubscription();
 
   // 工作台模式：body 锁高禁滚；卸载时恢复（落地页需要滚动）
   useEffect(() => {
@@ -60,7 +63,12 @@ export default function App() {
 
   const taskManager = useTaskManager(settings, language);
 
-  const hasXfCredentials = !!(settings.xfAppId && settings.xfAccessKeyId && settings.xfAccessKeySecret);
+  const platformXfReady = !!(
+    import.meta.env.VITE_XF_APP_ID &&
+    import.meta.env.VITE_XF_ACCESS_KEY_ID &&
+    import.meta.env.VITE_XF_ACCESS_KEY_SECRET
+  );
+  const hasXfCredentials = platformXfReady || !!(settings.xfAppId && settings.xfAccessKeyId && settings.xfAccessKeySecret);
   const needsConfig = !settings.apiKey && !hasXfCredentials;
 
   const handleSaveSettings = useCallback((s: Settings) => {
@@ -125,14 +133,17 @@ export default function App() {
             {([
               { key: 'workbench', icon: Layout,  label: '工作台' },
               { key: 'archive',   icon: Users,   label: '学生档案' },
+              { key: 'agent',     icon: Bot,     label: 'AI 助手' },
             ] as { key: AppMode; icon: typeof Layout; label: string }[]).map(({ key, icon: Icon, label }) => (
               <button
                 key={key}
                 onClick={() => setMode(key)}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-all"
                 style={mode === key ? {
-                  background: 'var(--bg-s1)', color: 'var(--text-1)',
-                  border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  background: key === 'agent' ? 'linear-gradient(135deg,#4493f820,#7c4af820)' : 'var(--bg-s1)',
+                  color: key === 'agent' ? 'var(--accent)' : 'var(--text-1)',
+                  border: `1px solid ${key === 'agent' ? '#4493f840' : 'var(--border)'}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                 } : {
                   background: 'transparent', color: 'var(--text-3)', border: '1px solid transparent',
                 }}
@@ -145,14 +156,27 @@ export default function App() {
 
         <div className="flex items-center gap-2 no-drag">
 
-          {/* Web 模式：升级入口 */}
+          {/* 配额进度条（Web 模式 + 有限配额） */}
+          {!isElectronTarget && isFinite(subscription.quotaMinutes) && !subscription.loading && (
+            <QuotaBar
+              plan={subscription.plan}
+              usedMinutes={subscription.usedMinutes}
+              quotaMinutes={subscription.quotaMinutes}
+            />
+          )}
+
+          {/* Web 模式：升级入口（免费版或接近超额时高亮） */}
           {!isElectronTarget && (
             <a
               href="/#pricing"
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
-              style={{ background: 'linear-gradient(to right, #1a2a4f, #1a1a40)', border: '1px solid #2a3f6f', color: '#7ba7ff', textDecoration: 'none' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4d7fff80'; (e.currentTarget as HTMLElement).style.color = '#a8c8ff'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2a3f6f'; (e.currentTarget as HTMLElement).style.color = '#7ba7ff'; }}
+              style={
+                subscription.plan === 'free' || subscription.remainingMinutes < 30
+                  ? { background: 'linear-gradient(to right,#7c2d12,#1a1a40)', border: '1px solid #c2410c80', color: '#fb923c', textDecoration: 'none' }
+                  : { background: 'linear-gradient(to right, #1a2a4f, #1a1a40)', border: '1px solid #2a3f6f', color: '#7ba7ff', textDecoration: 'none' }
+              }
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
             >
               <Zap size={11} /> 升级方案
             </a>
@@ -179,7 +203,9 @@ export default function App() {
                 style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
                 <User size={11} style={{ color: 'var(--accent)' }} />
                 <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user.email}
+                  {/* 微信用户优先显示 nickname，邮箱用户显示邮箱前缀 */}
+                  {(user.user_metadata?.nickname as string | undefined) ||
+                   (user.email?.startsWith('wx_') ? '微信用户' : (user.email?.split('@')[0] ?? user.email))}
                 </span>
               </div>
               <button
@@ -241,7 +267,7 @@ export default function App() {
 
       {/* ── Main ── */}
       <main className="flex-1 min-h-0" style={{ padding: '12px' }}>
-        {mode === 'workbench' ? (
+        {mode === 'workbench' && (
           <div className="flex h-full" style={{ gap: '10px' }}>
             {/* Left sidebar */}
             <div className="shrink-0" style={{ width: 300 }}>
@@ -272,10 +298,18 @@ export default function App() {
               />
             </div>
           </div>
-        ) : (
+        )}
+        {mode === 'archive' && (
           <StudentArchive
             tasks={taskManager.tasks}
             onGotoTask={handleGotoTask}
+          />
+        )}
+        {mode === 'agent' && (
+          <AgentChat
+            tasks={taskManager.tasks}
+            settings={settings}
+            onSaveFeedback={handleSaveToTask}
           />
         )}
       </main>
@@ -287,6 +321,42 @@ export default function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── QuotaBar ──────────────────────────────────────────────────────────────────
+
+function QuotaBar({ plan, usedMinutes, quotaMinutes }: {
+  plan: string; usedMinutes: number; quotaMinutes: number;
+}) {
+  const usedH = (usedMinutes / 60).toFixed(1);
+  const totalH = (quotaMinutes / 60).toFixed(0);
+  const pct = Math.min(100, Math.round((usedMinutes / quotaMinutes) * 100));
+  const isWarning = pct >= 80;
+  const isFull    = pct >= 100;
+
+  const barColor = isFull ? '#ef4444' : isWarning ? '#f59e0b' : '#4493f8';
+  const label    = PLAN_CONFIG[plan as keyof typeof PLAN_CONFIG]?.label ?? plan;
+
+  return (
+    <div
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+      style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', minWidth: 140 }}
+      title={`${label}：已用 ${usedH}h / ${totalH}h`}
+    >
+      <Clock size={10} style={{ color: barColor, flexShrink: 0 }} />
+      <div className="flex flex-col gap-0.5" style={{ flex: 1 }}>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>{label}</span>
+          <span className="text-[10px] font-medium" style={{ color: isFull ? '#ef4444' : 'var(--text-2)' }}>
+            {isFull ? '已用尽' : `${usedH}/${totalH}h`}
+          </span>
+        </div>
+        <div className="rounded-full overflow-hidden" style={{ height: 3, background: 'var(--bg-s3)' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 999, transition: 'width 0.3s' }} />
+        </div>
+      </div>
     </div>
   );
 }
