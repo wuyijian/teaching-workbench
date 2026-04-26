@@ -23,6 +23,22 @@ function setupApiRequestHeaders(sess) {
     details.requestHeaders['Origin'] = 'https://electron-app';
     callback({ requestHeaders: details.requestHeaders });
   });
+
+  // 允许渲染进程使用麦克风（录音功能）。
+  // Electron 默认拒绝所有权限请求，不设置此处理器会导致 getUserMedia
+  // 抛出误导性的 "NotFoundError: Requested device not found"。
+  sess.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media' || permission === 'mediaKeySystem') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+
+  sess.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'media') return true;
+    return null; // 其他权限走默认逻辑
+  });
 }
 
 // macOS: 深色模式跟随系统

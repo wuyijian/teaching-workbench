@@ -59,10 +59,17 @@ export function useMediaRecorder() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg.toLowerCase().includes('ermission')
-        ? '麦克风权限被拒绝，请在系统设置中允许访问麦克风'
-        : `无法启动录音：${msg}`);
+      const name = e instanceof Error ? (e as DOMException).name : '';
+      const msg  = e instanceof Error ? e.message : String(e);
+      if (name === 'NotAllowedError' || msg.toLowerCase().includes('ermission')) {
+        setError('麦克风权限被拒绝。请在系统「隐私与安全性 → 麦克风」中允许本应用访问。');
+      } else if (name === 'NotFoundError' || msg.toLowerCase().includes('not found')) {
+        setError('未找到麦克风设备。请确认麦克风已连接，并在系统设置中已授权本应用。');
+      } else if (name === 'NotReadableError') {
+        setError('麦克风被其他程序占用，请关闭其他录音应用后重试。');
+      } else {
+        setError(`无法启动录音（${name || 'Error'}）：${msg}`);
+      }
       setState('idle');
       return;
     }

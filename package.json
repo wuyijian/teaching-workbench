@@ -40,8 +40,8 @@
       "darkModeSupport": true,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "entitlements": null,
-      "entitlementsInherit": null
+      "entitlements": "build-assets/entitlements.mac.plist",
+      "entitlementsInherit": "build-assets/entitlements.mac.plist"
     },
     "dmg": {
       "title": "语文教学工作台",
