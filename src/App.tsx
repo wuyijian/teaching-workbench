@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Users, Layout } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { TaskPanel } from './components/TaskPanel';
 import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
+import { StudentArchive } from './components/StudentArchive';
+
+type AppMode = 'workbench' | 'archive';
 import { useTaskManager } from './hooks/useTaskManager';
 import { defaultOpenAiCompatibleBase, isElectronTarget, isRunningInElectron } from './config/app';
 import type { Settings } from './types';
@@ -49,6 +52,7 @@ export default function App() {
     return () => document.body.classList.remove('app-mode');
   }, []);
 
+  const [mode, setMode] = useState<AppMode>('workbench');
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [language, setLanguage] = useState(settings.language || 'zh-CN');
@@ -83,6 +87,12 @@ export default function App() {
     taskManager.saveNotes(taskId, notes);
   }, [taskManager]);
 
+  // 从档案页跳回工作台并选中对应任务
+  const handleGotoTask = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+    setMode('workbench');
+  }, []);
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-base)' }}>
       {/* ── Header ── */}
@@ -108,6 +118,28 @@ export default function App() {
               style={{ background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
               Beta
             </span>
+          </div>
+
+          {/* 模式切换标签 */}
+          <div className="flex items-center gap-0.5 ml-4 p-0.5 rounded-lg" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
+            {([
+              { key: 'workbench', icon: Layout,  label: '工作台' },
+              { key: 'archive',   icon: Users,   label: '学生档案' },
+            ] as { key: AppMode; icon: typeof Layout; label: string }[]).map(({ key, icon: Icon, label }) => (
+              <button
+                key={key}
+                onClick={() => setMode(key)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-all"
+                style={mode === key ? {
+                  background: 'var(--bg-s1)', color: 'var(--text-1)',
+                  border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                } : {
+                  background: 'transparent', color: 'var(--text-3)', border: '1px solid transparent',
+                }}
+              >
+                <Icon size={11} /> {label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -208,36 +240,44 @@ export default function App() {
       </header>
 
       {/* ── Main ── */}
-      <main className="flex-1 flex min-h-0" style={{ padding: '12px', gap: '10px' }}>
-        {/* Left sidebar */}
-        <div className="shrink-0" style={{ width: 300 }}>
-          <TaskPanel
+      <main className="flex-1 min-h-0" style={{ padding: '12px' }}>
+        {mode === 'workbench' ? (
+          <div className="flex h-full" style={{ gap: '10px' }}>
+            {/* Left sidebar */}
+            <div className="shrink-0" style={{ width: 300 }}>
+              <TaskPanel
+                tasks={taskManager.tasks}
+                hasXfCredentials={hasXfCredentials}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={setSelectedTaskId}
+                onCreateTask={handleCreateTask}
+                onDeleteTask={taskManager.deleteTask}
+                onCancelTask={taskManager.cancelTask}
+                onRetryTask={taskManager.retryTask}
+                isStudentArchived={taskManager.isStudentArchived}
+                onArchiveStudent={taskManager.archiveStudent}
+                onUnarchiveStudent={taskManager.unarchiveStudent}
+                language={language}
+                onLanguageChange={handleLanguageChange}
+              />
+            </div>
+            {/* Right panel */}
+            <div className="flex-1 min-w-0">
+              <RightPanel
+                tasks={taskManager.tasks}
+                settings={settings}
+                selectedTaskId={selectedTaskId}
+                onSaveToTask={handleSaveToTask}
+                onSaveNotes={handleSaveNotes}
+              />
+            </div>
+          </div>
+        ) : (
+          <StudentArchive
             tasks={taskManager.tasks}
-            hasXfCredentials={hasXfCredentials}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={setSelectedTaskId}
-            onCreateTask={handleCreateTask}
-            onDeleteTask={taskManager.deleteTask}
-            onCancelTask={taskManager.cancelTask}
-            onRetryTask={taskManager.retryTask}
-            isStudentArchived={taskManager.isStudentArchived}
-            onArchiveStudent={taskManager.archiveStudent}
-            onUnarchiveStudent={taskManager.unarchiveStudent}
-            language={language}
-            onLanguageChange={handleLanguageChange}
+            onGotoTask={handleGotoTask}
           />
-        </div>
-
-        {/* Right panel */}
-        <div className="flex-1 min-w-0">
-          <RightPanel
-            tasks={taskManager.tasks}
-            settings={settings}
-            selectedTaskId={selectedTaskId}
-            onSaveToTask={handleSaveToTask}
-            onSaveNotes={handleSaveNotes}
-          />
-        </div>
+        )}
       </main>
 
       {showSettings && (
