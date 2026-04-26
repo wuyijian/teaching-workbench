@@ -1,4 +1,4 @@
-# 与根目录 vercel.json 等效：同域反代，避免浏览器 Failed to fetch（CORS）
+# API 反代（必须放在 SPA 回落规则之前）
 [[redirects]]
   from = "/xfyun-api/*"
   to = "https://office-api-ist-dx.iflyaisol.com/:splat"
@@ -10,3 +10,9 @@
   to = "https://api.openai.com/:splat"
   status = 200
   force = true
+
+# SPA 回落：所有未匹配的路径（包括 /app）均由 index.html 处理
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
