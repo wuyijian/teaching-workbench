@@ -29,7 +29,7 @@ export interface Settings {
   xfAccessKeySecret: string;
 }
 
-export type TranscribeEngine = 'whisper' | 'xfyun';
+export type TranscribeEngine = 'xfyun';
 
 export type TaskStatus = 'queued' | 'uploading' | 'transcribing' | 'done' | 'error';
 

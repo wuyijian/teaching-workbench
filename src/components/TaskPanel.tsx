@@ -2,11 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Plus, ChevronLeft, Trash2, RotateCcw, Copy, Check,
   FileAudio, Loader2, CheckCircle2, AlertCircle,
-  User, BookOpen, Zap, Cpu, Upload, X, Sparkles,
+  User, BookOpen, Upload, X, Sparkles,
   Archive, ArchiveRestore, FileDown, ChevronRight,
   Mic, Pause, Play, Square,
 } from 'lucide-react';
-import type { Task, TranscribeEngine } from '../types';
+import type { Task } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
@@ -105,7 +105,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (name: string, topic: string, prompt: string, engine: TranscribeEngine, file: File) => void;
+  onCreateTask: (name: string, topic: string, prompt: string, file: File) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -127,12 +127,10 @@ const LANGUAGES = [
 // Task creation form
 // ────────────────────────────────────────────────────────────────────────────
 function CreateForm({
-  hasXfCredentials,
   onSubmit,
   onCancel,
 }: {
-  hasXfCredentials: boolean;
-  onSubmit: (name: string, topic: string, prompt: string, engine: TranscribeEngine, file: File) => void;
+  onSubmit: (name: string, topic: string, prompt: string, file: File) => void;
   onCancel: () => void;
 }) {
   const [studentName, setStudentName] = useState('');
@@ -140,7 +138,6 @@ function CreateForm({
   const [presetIdx, setPresetIdx] = useState(0); // 默认「课堂反馈」
   const [customPrompt, setCustomPrompt] = useState('');
   const [promptExpanded, setPromptExpanded] = useState(false);
-  const [engine, setEngine] = useState<TranscribeEngine>(hasXfCredentials ? 'xfyun' : 'whisper');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
@@ -197,7 +194,7 @@ function CreateForm({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(studentName.trim(), topic.trim(), finalPrompt, engine, file!);
+    onSubmit(studentName.trim(), topic.trim(), finalPrompt, file!);
   };
 
   return (
@@ -281,34 +278,6 @@ function CreateForm({
               )}
             </div>
           )}
-        </div>
-
-        {/* Engine */}
-        <div>
-          <label className="text-xs text-slate-400 font-medium mb-1.5 block">转写引擎</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setEngine('xfyun')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                engine === 'xfyun'
-                  ? 'bg-sky-500/20 border-sky-500/40 text-sky-300'
-                  : 'bg-slate-800 border-slate-600 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Zap size={11} /> 讯飞大模型
-              {!hasXfCredentials && <span className="text-amber-400 text-[10px]">需配置</span>}
-            </button>
-            <button
-              onClick={() => setEngine('whisper')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                engine === 'whisper'
-                  ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
-                  : 'bg-slate-800 border-slate-600 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Cpu size={11} /> Whisper
-            </button>
-          </div>
         </div>
 
         {/* Audio source */}
@@ -608,7 +577,7 @@ function TaskCard({
               </span>
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
-              {task.engine === 'xfyun' ? '讯飞' : 'Whisper'}
+              讯飞大模型
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
               {formatTime(task.createdAt)}
@@ -801,7 +770,7 @@ function exportTaskMd(task: Task) {
     `- **学生**：${task.studentName}`,
     task.topic ? `- **主题**：${task.topic}` : '',
     `- **日期**：${dateStr}`,
-    `- **引擎**：${task.engine === 'xfyun' ? '讯飞大模型' : 'Whisper'}`,
+    `- **引擎**：讯飞大模型`,
     '',
     '## 课堂转写',
     '',
@@ -843,7 +812,7 @@ function groupTasksByStudent(taskList: Task[]) {
 }
 
 export function TaskPanel({
-  tasks, hasXfCredentials, selectedTaskId, onSelectTask,
+  tasks, hasXfCredentials: _hxf, selectedTaskId, onSelectTask,
   onCreateTask, onDeleteTask, onCancelTask, onRetryTask,
   isStudentArchived, onArchiveStudent, onUnarchiveStudent,
   language, onLanguageChange,
@@ -855,9 +824,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    name: string, topic: string, prompt: string, engine: TranscribeEngine, file: File,
+    name: string, topic: string, prompt: string, file: File,
   ) => {
-    onCreateTask(name, topic, prompt, engine, file);
+    onCreateTask(name, topic, prompt, file);
     setView('list');
   }, [onCreateTask]);
 
@@ -877,7 +846,7 @@ export function TaskPanel({
   if (view === 'create') {
     return (
       <div className="flex flex-col h-full" style={panelStyle}>
-        <CreateForm hasXfCredentials={hasXfCredentials} onSubmit={handleCreate} onCancel={() => setView('list')} />
+        <CreateForm onSubmit={handleCreate} onCancel={() => setView('list')} />
       </div>
     );
   }

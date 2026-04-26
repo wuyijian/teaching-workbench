@@ -6,7 +6,7 @@ import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { useTaskManager } from './hooks/useTaskManager';
 import { defaultOpenAiCompatibleBase, isElectronTarget, isRunningInElectron } from './config/app';
-import type { Settings, TranscribeEngine } from './types';
+import type { Settings } from './types';
 
 const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
@@ -63,9 +63,9 @@ export default function App() {
   }, [settings, handleSaveSettings]);
 
   const handleCreateTask = useCallback((
-    name: string, topic: string, prompt: string, engine: TranscribeEngine, file: File,
+    name: string, topic: string, prompt: string, file: File,
   ) => {
-    taskManager.createTask(name, topic, prompt, engine, file);
+    taskManager.createTask(name, topic, prompt, file);
   }, [taskManager]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {

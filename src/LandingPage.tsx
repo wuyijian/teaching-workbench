@@ -77,7 +77,7 @@ const FEATURES = [
   {
     icon: Zap,
     title: '高精度转写',
-    points: ['讯飞大模型（课堂用语优化）', 'OpenAI Whisper（多语言）', '多任务队列，互不干扰', '转写结果带时间戳'],
+    points: ['讯飞大模型（课堂用语优化）', '支持 202 种方言与标准普通话', '多任务队列，互不干扰', '转写结果带时间戳'],
   },
   {
     icon: Sparkles,
@@ -88,7 +88,7 @@ const FEATURES = [
 
 const STEPS = [
   { n: '01', title: '上传或录制音频', desc: '课后将录音文件拖入工作台，或直接在应用内录制课堂音频。' },
-  { n: '02', title: 'AI 精准转写', desc: '讯飞 / Whisper 自动将音频转写为带时间戳的文字，长音频自动切片处理。' },
+  { n: '02', title: 'AI 精准转写', desc: '讯飞大模型自动将音频转写为带时间戳的文字，支持 202 种方言，教育领域深度优化。' },
   { n: '03', title: '生成课堂反馈', desc: '选中学生任务，一键调用 AI 生成标准格式家长反馈，支持追问修改。' },
   { n: '04', title: '发送给家长', desc: '直接复制文本发送家校群，或导出为 Markdown 文件存档。' },
 ];
@@ -246,7 +246,7 @@ export function LandingPage() {
           <div style={{ borderRadius: 12, background: '#0c1018', padding: '24px 20px', display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
             {[
               { icon: FileAudio, label: '上传 · 录音', sub: '拖拽 / 点击 / 粘贴', color: C.accent },
-              { icon: Zap, label: '自动转写', sub: '讯飞 + Whisper', color: '#f59e0b' },
+              { icon: Zap, label: '自动转写', sub: '讯飞大模型', color: '#f59e0b' },
               { icon: Sparkles, label: 'AI 反馈', sub: '一键生成 · 可追问', color: '#10b981' },
               { icon: MessageSquare, label: '发送家长', sub: '复制 · 导出', color: '#a855f7' },
             ].map(({ icon: Icon, label, sub, color }) => (

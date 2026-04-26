@@ -1,19 +1,9 @@
 import type { TranscriptSegment } from '../types';
 import { FileUploadPanel } from './FileUploadPanel';
-import type { TranscribeStatus } from '../hooks/useFileTranscription';
 import type { XfyunStatus } from '../hooks/useXfyunTranscription';
 import { FileAudio } from 'lucide-react';
 
 interface Props {
-  // Whisper
-  fileStatus: TranscribeStatus;
-  fileProgress: number;
-  fileSegments: TranscriptSegment[];
-  fileError: string | null;
-  fileFileName: string | null;
-  onFileTranscribe: (file: File) => void;
-  onFileReset: () => void;
-  // iFlytek
   xfStatus: XfyunStatus;
   xfProgress: number;
   xfSegments: TranscriptSegment[];
@@ -23,7 +13,6 @@ interface Props {
   onXfTranscribe: (file: File) => void;
   onXfReset: () => void;
   hasXfCredentials: boolean;
-  // Shared
   language: string;
   onLanguageChange: (lang: string) => void;
 }
@@ -36,8 +25,6 @@ const LANGUAGES = [
 ];
 
 export function RecordingPanel({
-  fileStatus, fileProgress, fileSegments, fileError, fileFileName,
-  onFileTranscribe, onFileReset,
   xfStatus, xfProgress, xfSegments, xfError, xfFileName, xfEstimateMs,
   onXfTranscribe, onXfReset, hasXfCredentials,
   language, onLanguageChange,
@@ -61,16 +48,8 @@ export function RecordingPanel({
         </select>
       </div>
 
-      {/* Content */}
       <div className="flex-1 min-h-0 flex flex-col">
         <FileUploadPanel
-          whisperStatus={fileStatus}
-          whisperProgress={fileProgress}
-          whisperSegments={fileSegments}
-          whisperError={fileError}
-          whisperFileName={fileFileName}
-          onWhisperTranscribe={onFileTranscribe}
-          onWhisperReset={onFileReset}
           xfStatus={xfStatus}
           xfProgress={xfProgress}
           xfSegments={xfSegments}

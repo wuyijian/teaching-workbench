@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Task, TranscribeEngine, Settings } from '../types';
+import type { Task, Settings } from '../types';
 import type { TranscriptSegment } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 
@@ -73,7 +73,7 @@ function migrateTasksAndArchived(rawTasks: Task[]): { tasks: Task[]; mergedArchi
 
 const INITIAL_DATA = migrateTasksAndArchived(loadTasks());
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
-import { xfyunProxyBase, resolveApiBase } from '../config/urls';
+import { xfyunProxyBase } from '../config/urls';
 
 function uid() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -81,135 +81,6 @@ function uid() {
 
 function mapLanguage(lang: string) {
   return lang.startsWith('en') ? 'autominor' : 'autodialect';
-}
-
-// ── Whisper 音频切片工具 ──────────────────────────────────────────────────────
-const WHISPER_MAX_BYTES = 24 * 1024 * 1024; // 24MB，低于 API 25MB 限制
-const CHUNK_SECONDS = 10 * 60;              // 每片 10 分钟
-const TARGET_SR = 16_000;                   // 降采样目标：16kHz 单声道
-
-function toMono16k(buf: AudioBuffer, startSec: number, endSec: number): Float32Array {
-  const sr = buf.sampleRate;
-  const s0 = Math.round(startSec * sr);
-  const s1 = Math.min(Math.round(endSec * sr), buf.length);
-  const len = s1 - s0;
-  const mono = new Float32Array(len);
-  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-    const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) mono[i] += d[s0 + i] / buf.numberOfChannels;
-  }
-  if (sr === TARGET_SR) return mono;
-  const ratio = sr / TARGET_SR;
-  const out = new Float32Array(Math.round(len / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const pos = i * ratio;
-    const idx = Math.floor(pos);
-    const frac = pos - idx;
-    out[i] = idx + 1 < mono.length ? mono[idx] * (1 - frac) + mono[idx + 1] * frac : mono[idx];
-  }
-  return out;
-}
-
-function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
-  const nb = samples.length * 2;
-  const buf = new ArrayBuffer(44 + nb);
-  const v = new DataView(buf);
-  const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF'); v.setUint32(4, 36 + nb, true);
-  w(8, 'WAVE'); w(12, 'fmt ');
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
-  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  w(36, 'data'); v.setUint32(40, nb, true);
-  let off = 44;
-  for (let i = 0; i < samples.length; i++, off += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([buf], { type: 'audio/wav' });
-}
-
-async function callWhisperAPI(
-  blob: Blob, name: string, settings: Settings, language: string,
-): Promise<{ text?: string; segments?: { text: string; start: number }[] }> {
-  const base = resolveApiBase(settings.apiBaseUrl);
-  const form = new FormData();
-  form.append('file', new File([blob], name, { type: 'audio/wav' }));
-  form.append('model', 'whisper-1');
-  form.append('response_format', 'verbose_json');
-  form.append('timestamp_granularities[]', 'segment');
-  const lc = language.split('-')[0];
-  if (lc) form.append('language', lc);
-  const resp = await fetch(`${base}/audio/transcriptions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${settings.apiKey}` },
-    body: form,
-  });
-  if (!resp.ok) throw new Error(`Whisper 错误 ${resp.status}: ${await resp.text()}`);
-  return resp.json();
-}
-
-function parseWhisperResult(
-  data: { text?: string; segments?: { text: string; start: number }[] },
-  offsetSec: number,
-  idOffset: number,
-): TranscriptSegment[] {
-  if (data.segments?.length) {
-    return data.segments
-      .map((s, i) => ({ id: `ws-${idOffset + i}`, text: s.text.trim(), timestamp: Math.round(s.start + offsetSec), isFinal: true }))
-      .filter(s => s.text);
-  }
-  if (data.text?.trim()) return [{ id: `ws-${idOffset}`, text: data.text.trim(), timestamp: Math.round(offsetSec), isFinal: true }];
-  return [];
-}
-
-// ── Whisper 转写（自动切片支持长音频）────────────────────────────────────────
-async function transcribeWhisper(
-  file: File,
-  settings: Settings,
-  language: string,
-  onProgress: (p: number) => void,
-  shouldStop: () => boolean,
-): Promise<TranscriptSegment[]> {
-  if (!settings.apiKey) throw new Error('请先配置 Whisper API Key');
-
-  // 文件 ≤24MB：直接发送
-  if (file.size <= WHISPER_MAX_BYTES) {
-    onProgress(20);
-    const data = await callWhisperAPI(file, file.name, settings, language);
-    onProgress(90);
-    return parseWhisperResult(data, 0, 0);
-  }
-
-  // 文件 >24MB：解码 → 切片 → 逐片转写 → 合并
-  onProgress(5);
-  const arrayBuf = await file.arrayBuffer();
-  if (shouldStop()) throw new Error('已取消');
-  const ctx = new OfflineAudioContext(1, 1, TARGET_SR);
-  const audioBuf = await ctx.decodeAudioData(arrayBuf);
-  if (shouldStop()) throw new Error('已取消');
-
-  const totalSec = audioBuf.duration;
-  const numChunks = Math.ceil(totalSec / CHUNK_SECONDS);
-  const baseName = file.name.replace(/\.[^.]+$/, '');
-  const segments: TranscriptSegment[] = [];
-  let idOffset = 0;
-
-  for (let i = 0; i < numChunks; i++) {
-    if (shouldStop()) throw new Error('已取消');
-    const startSec = i * CHUNK_SECONDS;
-    const endSec = Math.min((i + 1) * CHUNK_SECONDS, totalSec);
-    const pcm = toMono16k(audioBuf, startSec, endSec);
-    const wav = encodeWAV(pcm, TARGET_SR);
-    const chunkSegs = parseWhisperResult(
-      await callWhisperAPI(wav, `${baseName}_part${i + 1}.wav`, settings, language),
-      startSec, idOffset,
-    );
-    segments.push(...chunkSegs);
-    idOffset += chunkSegs.length;
-    onProgress(Math.round(10 + ((i + 1) / numChunks) * 85));
-  }
-  return segments;
 }
 
 // ── iFlytek ──────────────────────────────────────────────────────────────────
@@ -300,7 +171,7 @@ export function useTaskManager(settings: Settings, language: string) {
   const stopFlags  = useRef(new Map<string, boolean>());
   const queueRef   = useRef<string[]>([]);          // FIFO 待执行 ID 列表
   const runningRef = useRef(false);                 // 当前是否有任务在执行
-  const pendingRef = useRef(new Map<string, { engine: TranscribeEngine; file: File }>());
+  const pendingRef = useRef(new Map<string, File>());
 
   // 让 drain 始终拿到最新 settings / language，避免闭包旧值
   const settingsRef = useRef(settings);
@@ -328,7 +199,7 @@ export function useTaskManager(settings: Settings, language: string) {
     if (!queueRef.current.length) return;
 
     const id = queueRef.current.shift()!;
-    const { engine, file } = pendingRef.current.get(id)!;
+    const file = pendingRef.current.get(id)!;
     runningRef.current = true;
 
     const s = settingsRef.current;
@@ -336,12 +207,10 @@ export function useTaskManager(settings: Settings, language: string) {
     const onProgress = (p: number) => patch(id, { progress: p });
     const shouldStop  = () => stopFlags.current.get(id) === true;
 
-    patch(id, { status: engine === 'xfyun' ? 'uploading' : 'transcribing', progress: 5 });
+    patch(id, { status: 'uploading', progress: 5 });
 
     try {
-      const segments = engine === 'xfyun'
-        ? await transcribeXfyun(file, s, l, onProgress, shouldStop)
-        : await transcribeWhisper(file, s, l, onProgress, shouldStop);
+      const segments = await transcribeXfyun(file, s, l, onProgress, shouldStop);
       if (!stopFlags.current.get(id)) {
         patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
       }
@@ -361,12 +230,11 @@ export function useTaskManager(settings: Settings, language: string) {
     studentName: string,
     topic: string,
     prompt: string,
-    engine: TranscribeEngine,
     file: File,
   ) => {
     const id = uid();
     const newTask: Task = {
-      id, studentName, topic, prompt, engine,
+      id, studentName, topic, prompt, engine: 'xfyun',
       audioFileName: file.name,
       audioFile: file,
       status: 'queued',
@@ -377,7 +245,7 @@ export function useTaskManager(settings: Settings, language: string) {
     };
     setTasks(prev => [newTask, ...prev]);
     stopFlags.current.set(id, false);
-    pendingRef.current.set(id, { engine, file });
+    pendingRef.current.set(id, file);
     queueRef.current.push(id);
     drain();
   }, [drain]);
@@ -409,7 +277,7 @@ export function useTaskManager(settings: Settings, language: string) {
   const retryTask = useCallback((task: Task) => {
     if (!task.audioFile) return;
     deleteTask(task.id);
-    createTask(task.studentName, task.topic, task.prompt, task.engine, task.audioFile);
+    createTask(task.studentName, task.topic, task.prompt, task.audioFile);
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {
