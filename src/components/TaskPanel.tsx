@@ -341,29 +341,40 @@ function CreateForm({
           ) : recordMode === 'upload' ? (
             /* ── 上传文件 ── */
             <>
+              {/* 隐藏 input：通过 ref.click() 编程触发，不放在 dropzone 上方做"透明蒙层"，
+                  避免点击同时被 input 和外层 div 接收造成文件选择器开两次 */}
+              {!isElectron && (
+                <input
+                  ref={inputRef}
+                  type="file"
+                  hidden
+                  accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                />
+              )}
               <div
-                className={`relative rounded-xl border-2 border-dashed transition-all cursor-pointer ${
-                  dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500'
+                role="button"
+                tabIndex={0}
+                aria-label="选择或拖入音频文件"
+                className={`rounded-xl border-2 border-dashed transition-all cursor-pointer outline-none ${
+                  dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 focus-visible:border-indigo-500'
                 }`}
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={handleDrop}
                 onClick={openFilePicker}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openFilePicker();
+                  }
+                }}
               >
                 <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
                   <Upload size={20} className="text-slate-500" />
-                  <p className="text-xs text-slate-400">拖拽 · 点击 · 或 ⌘V 粘贴音频文件</p>
+                  <p className="text-xs text-slate-400">点击 · 拖入 · 或 ⌘V 粘贴音频文件</p>
                   <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
                 </div>
-                {!isElectron && (
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
-                  />
-                )}
               </div>
               {filePickError && (
                 <p className="text-xs text-red-400 mt-1">{filePickError}</p>
