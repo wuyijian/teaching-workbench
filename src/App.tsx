@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Settings as SettingsIcon, BookOpen, LogOut, User } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { TaskPanel } from './components/TaskPanel';
@@ -42,6 +42,13 @@ function loadSettings(): Settings {
 
 export default function App() {
   const { user, authEnabled, signOut } = useAuth();
+
+  // 工作台模式：body 锁高禁滚；卸载时恢复（落地页需要滚动）
+  useEffect(() => {
+    document.body.classList.add('app-mode');
+    return () => document.body.classList.remove('app-mode');
+  }, []);
+
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [language, setLanguage] = useState(settings.language || 'zh-CN');

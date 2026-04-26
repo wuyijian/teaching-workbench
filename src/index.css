@@ -28,18 +28,24 @@
 @layer base {
   * { box-sizing: border-box; }
 
+  html { scroll-behavior: smooth; }
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
     background: var(--bg-base);
     color: var(--text-1);
     margin: 0; padding: 0;
-    height: 100vh; overflow: hidden;
     -webkit-font-smoothing: antialiased;
     font-size: 14px;
     line-height: 1.5;
   }
 
-  #root {
+  /* 工作台模式：锁死高度禁止滚动 */
+  body.app-mode {
+    height: 100vh;
+    overflow: hidden;
+  }
+  body.app-mode #root {
     height: 100vh;
     display: flex;
     flex-direction: column;
