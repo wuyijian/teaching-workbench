@@ -70,6 +70,10 @@ export default function App() {
     taskManager.saveAISummary(taskId, summary);
   }, [taskManager]);
 
+  const handleSaveNotes = useCallback((taskId: string, notes: string) => {
+    taskManager.saveNotes(taskId, notes);
+  }, [taskManager]);
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-base)' }}>
       {/* ── Header ── */}
@@ -156,6 +160,7 @@ export default function App() {
             settings={settings}
             selectedTaskId={selectedTaskId}
             onSaveToTask={handleSaveToTask}
+            onSaveNotes={handleSaveNotes}
           />
         </div>
       </main>

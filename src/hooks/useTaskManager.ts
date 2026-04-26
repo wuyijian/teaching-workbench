@@ -416,6 +416,10 @@ export function useTaskManager(settings: Settings, language: string) {
     patch(id, { aiSummary: summary, aiSavedAt: Date.now() });
   }, [patch]);
 
+  const saveNotes = useCallback((id: string, notes: string) => {
+    patch(id, { notes });
+  }, [patch]);
+
   const isStudentArchived = useCallback((studentName: string) => {
     const k = normalizeStudentKey(studentName);
     return k !== '' && archivedStudents[k] !== undefined;
@@ -445,6 +449,7 @@ export function useTaskManager(settings: Settings, language: string) {
     deleteTask,
     retryTask,
     saveAISummary,
+    saveNotes,
     isStudentArchived,
     archiveStudent,
     unarchiveStudent,

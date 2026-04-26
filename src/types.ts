@@ -47,6 +47,7 @@ export interface Task {
   error: string | null;
   createdAt: number;
   estimateMs?: number;
+  notes?: string;       // 教师补充信息（课前检测、课堂观察等）
   aiSummary?: string;
   aiSavedAt?: number;
 }

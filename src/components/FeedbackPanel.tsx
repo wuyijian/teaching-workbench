@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, FileText, Copy, Check, Download, BookmarkCheck,
   RefreshCw, Send, Square, ChevronDown, Bot, User,
-  AlertCircle, Loader2,
+  AlertCircle, Loader2, ClipboardList, ChevronUp,
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -19,6 +19,7 @@ interface Props {
   settings: Settings;
   selectedTaskId: string | null;
   onSaveToTask: (taskId: string, summary: string) => void;
+  onSaveNotes: (taskId: string, notes: string) => void;
 }
 
 // ── 流式调用 AI ───────────────────────────────────────────────────────────────
@@ -141,17 +142,17 @@ function FollowUpBubble({ msg }: { msg: FeedbackMessage }) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }: Props) {
+export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (selectedTaskId) return selectedTaskId;
     const done = tasks.filter(t => t.status === 'done');
     return done[0]?.id ?? null;
   });
 
-  // 外部 selectedTaskId 变化时同步
   useEffect(() => {
     if (selectedTaskId) setSelectedId(selectedTaskId);
   }, [selectedTaskId]);
+
   const [feedback, setFeedback] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,14 +161,18 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }:
   const [followUps, setFollowUps] = useState<FeedbackMessage[]>([]);
   const [input, setInput] = useState('');
   const [isFollowUp, setIsFollowUp] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [notes, setNotes] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const saveNotesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedTask = tasks.find(t => t.id === selectedId) ?? null;
 
-  // 切换任务时重置
   useEffect(() => {
     setFeedback(selectedTask?.aiSummary ?? '');
+    setNotes(selectedTask?.notes ?? '');
+    setNotesExpanded(!!(selectedTask?.notes));
     setFollowUps([]);
     setError(null);
     setSaved(false);
@@ -185,6 +190,13 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }:
     }
   }, [tasks, selectedId]);
 
+  const handleNotesChange = useCallback((val: string) => {
+    setNotes(val);
+    if (!selectedId) return;
+    if (saveNotesTimer.current) clearTimeout(saveNotesTimer.current);
+    saveNotesTimer.current = setTimeout(() => onSaveNotes(selectedId, val), 800);
+  }, [selectedId, onSaveNotes]);
+
   const generate = useCallback(async () => {
     if (!selectedTask) return;
     abortRef.current?.abort();
@@ -201,7 +213,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }:
     const date = new Date(selectedTask.createdAt);
     const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
     const meta = [`日期：${dateStr}`, `学生姓名：${selectedTask.studentName}`, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
-    const userContent = `${FEEDBACK_PROMPT}\n\n---\n${meta}\n\n课堂录音转写内容：\n${transcript}`;
+    const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
+    const userContent = `${FEEDBACK_PROMPT}\n\n---\n${meta}${notesBlock}\n\n课堂录音转写内容：\n${transcript}`;
 
     try {
       await streamAI(
@@ -217,7 +230,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }:
       setIsGenerating(false);
       abortRef.current = null;
     }
-  }, [selectedTask, settings]);
+  }, [selectedTask, settings, notes]);
 
   const cancel = () => { abortRef.current?.abort(); setIsGenerating(false); };
 
@@ -289,22 +302,62 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask }:
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between shrink-0"
-        style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-        <TaskSelector tasks={tasks} selectedId={selectedId} onSelect={id => setSelectedId(id)} />
+      <div className="shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between" style={{ padding: '8px 12px' }}>
+          <TaskSelector tasks={tasks} selectedId={selectedId} onSelect={id => setSelectedId(id)} />
+          {selectedTask && (
+            isGenerating ? (
+              <button onClick={cancel} style={{ ...btnStyle(), color: 'var(--red)', background: 'var(--red-dim)', borderColor: '#5a1e1e' }}>
+                <Square size={10} /> 停止
+              </button>
+            ) : (
+              <button onClick={generate} style={{ ...btnStyle(), color: '#fff', background: 'var(--accent)', borderColor: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
+                {hasFeedback ? <RefreshCw size={10} /> : <Sparkles size={10} />}
+                {hasFeedback ? '重新生成' : '生成反馈'}
+              </button>
+            )
+          )}
+        </div>
+
+        {/* 补充信息折叠区 */}
         {selectedTask && (
-          isGenerating ? (
-            <button onClick={cancel} style={{ ...btnStyle(), color: 'var(--red)', background: 'var(--red-dim)', borderColor: '#5a1e1e' }}>
-              <Square size={10} /> 停止
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              onClick={() => setNotesExpanded(v => !v)}
+              className="flex items-center gap-1.5 w-full text-left transition-colors"
+              style={{ padding: '5px 12px', color: notes.trim() ? 'var(--accent)' : 'var(--text-3)', fontSize: 11 }}
+            >
+              <ClipboardList size={11} />
+              <span className="flex-1">{notes.trim() ? `补充信息：${notes.slice(0, 30)}${notes.length > 30 ? '…' : ''}` : '添加补充信息（课前检测、课堂观察等）'}</span>
+              {notesExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
             </button>
-          ) : (
-            <button onClick={generate} style={{ ...btnStyle(), color: '#fff', background: 'var(--accent)', borderColor: 'transparent' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-              {hasFeedback ? <RefreshCw size={10} /> : <Sparkles size={10} />}
-              {hasFeedback ? '重新生成' : '生成反馈'}
-            </button>
-          )
+            {notesExpanded && (
+              <div style={{ padding: '0 12px 8px' }}>
+                <textarea
+                  value={notes}
+                  onChange={e => handleNotesChange(e.target.value)}
+                  placeholder="例如：课前检测平均分 78 分，有 3 名同学未完成作业；本节课重点难点为倒装句…"
+                  rows={3}
+                  className="scrollbar-thin w-full resize-none outline-none rounded-lg"
+                  style={{
+                    background: 'var(--bg-s2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-1)',
+                    fontSize: 12,
+                    padding: '8px 10px',
+                    lineHeight: 1.6,
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
+                  此信息将在生成反馈时一并提供给 AI，自动保存
+                </p>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
