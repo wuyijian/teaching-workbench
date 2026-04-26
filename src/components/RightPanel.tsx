@@ -69,9 +69,10 @@ export function RightPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSa
         ))}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-h-0">
-        {tab === 'feedback' ? (
+      {/* Content：两个面板都挂载，用 hidden 类切显隐，
+          这样 FeedbackPanel 在生成时切到「内容问答」也不会被卸载、丢失生成内容 */}
+      <div className="flex-1 min-h-0 relative">
+        <div className={`absolute inset-0 ${tab === 'feedback' ? '' : 'hidden'}`}>
           <FeedbackPanel
             tasks={tasks}
             settings={settings}
@@ -79,9 +80,10 @@ export function RightPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSa
             onSaveToTask={onSaveToTask}
             onSaveNotes={onSaveNotes}
           />
-        ) : (
+        </div>
+        <div className={`absolute inset-0 ${tab === 'chat' ? '' : 'hidden'}`}>
           <TranscriptChat task={selectedTask} settings={settings} />
-        )}
+        </div>
       </div>
     </div>
   );

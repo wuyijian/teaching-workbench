@@ -7,6 +7,7 @@ import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { StudentArchive } from './components/StudentArchive';
 import { AgentChat } from './components/AgentChat';
+import { FeedbackButton } from './components/FeedbackButton';
 import { useTaskManager } from './hooks/useTaskManager';
 import { isElectronTarget, isRunningInElectron } from './config/app';
 import { mergePlatformApiSettings, hasPlatformLlm, hasPlatformXf } from './config/platformApi';
@@ -225,6 +226,9 @@ export default function App() {
             </button>
           )}
 
+        {/* 提交建议 / 反馈 */}
+        <FeedbackButton />
+
         <button
           onClick={() => setShowSettings(true)}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
@@ -256,11 +260,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main ── */}
-      <main className="flex-1 min-h-0" style={{ padding: '12px' }}>
-        {mode === 'workbench' && (
+      {/* ── Main ──
+          三个 mode 都常驻挂载，用 hidden 切显隐，
+          避免切换到「学生档案 / AI 助手」时卸载 RightPanel 打断正在生成的反馈 */}
+      <main className="flex-1 min-h-0 relative">
+        {/* 工作台 */}
+        <div className={`absolute inset-0 ${mode === 'workbench' ? '' : 'hidden'}`} style={{ padding: '12px' }}>
           <div className="flex h-full" style={{ gap: '10px' }}>
-            {/* Left sidebar */}
             <div className="shrink-0" style={{ width: 300 }}>
               <TaskPanel
                 tasks={taskManager.tasks}
@@ -278,7 +284,6 @@ export default function App() {
                 onLanguageChange={handleLanguageChange}
               />
             </div>
-            {/* Right panel */}
             <div className="flex-1 min-w-0">
               <RightPanel
                 tasks={taskManager.tasks}
@@ -289,20 +294,24 @@ export default function App() {
               />
             </div>
           </div>
-        )}
-        {mode === 'archive' && (
+        </div>
+
+        {/* 学生档案 */}
+        <div className={`absolute inset-0 ${mode === 'archive' ? '' : 'hidden'}`} style={{ padding: '12px' }}>
           <StudentArchive
             tasks={taskManager.tasks}
             onGotoTask={handleGotoTask}
           />
-        )}
-        {mode === 'agent' && (
+        </div>
+
+        {/* AI 助手 */}
+        <div className={`absolute inset-0 ${mode === 'agent' ? '' : 'hidden'}`} style={{ padding: '12px' }}>
           <AgentChat
             tasks={taskManager.tasks}
             settings={settings}
             onSaveFeedback={handleSaveToTask}
           />
-        )}
+        </div>
       </main>
 
       {showSettings && (

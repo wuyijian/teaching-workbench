@@ -72,12 +72,18 @@ async function streamAI(
 
 // ── Task selector ─────────────────────────────────────────────────────────────
 function TaskSelector({
-  tasks, selectedId, onSelect,
-}: { tasks: Task[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  tasks, selectedId, onSelect, generatingIds,
+}: {
+  tasks: Task[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  generatingIds: Set<string>;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const done = tasks.filter(t => t.status === 'done');
   const selected = tasks.find(t => t.id === selectedId);
+  const selectedGenerating = selected && generatingIds.has(selected.id);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -89,7 +95,7 @@ function TaskSelector({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 text-xs bg-slate-800 border border-slate-600 hover:border-slate-500 rounded-lg px-3 py-1.5 text-slate-300 transition-all max-w-[220px]"
+        className="flex items-center gap-2 text-xs bg-slate-800 border border-slate-600 hover:border-slate-500 rounded-lg px-3 py-1.5 text-slate-300 transition-all max-w-[260px]"
       >
         <FileText size={11} className="text-slate-400 shrink-0" />
         <span className="truncate">
@@ -97,6 +103,9 @@ function TaskSelector({
             ? `${selected.studentName}${selected.topic ? ` · ${selected.topic}` : ''}`
             : done.length ? '选择任务…' : '暂无已完成任务'}
         </span>
+        {selectedGenerating && (
+          <Loader2 size={10} className="animate-spin shrink-0" style={{ color: 'var(--accent)' }} />
+        )}
         <ChevronDown size={11} className="text-slate-500 shrink-0" />
       </button>
 
@@ -106,22 +115,30 @@ function TaskSelector({
             <p className="text-xs text-slate-400 font-medium">选择要生成反馈的任务</p>
           </div>
           <div className="max-h-52 overflow-y-auto scrollbar-thin py-1">
-            {done.map(task => (
-              <button
-                key={task.id}
-                onClick={() => { onSelect(task.id); setOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-700/50 transition-colors text-left ${selectedId === task.id ? 'bg-indigo-500/10' : ''}`}
-              >
-                <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center shrink-0 text-xs text-slate-300 font-medium">
-                  {task.studentName.slice(0, 1)}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-200 font-medium truncate">{task.studentName}</p>
-                  {task.topic && <p className="text-[10px] text-slate-500 truncate">{task.topic}</p>}
-                  {task.aiSummary && <p className="text-[10px] text-emerald-500">已有保存反馈</p>}
-                </div>
-              </button>
-            ))}
+            {done.map(task => {
+              const generating = generatingIds.has(task.id);
+              return (
+                <button
+                  key={task.id}
+                  onClick={() => { onSelect(task.id); setOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-700/50 transition-colors text-left ${selectedId === task.id ? 'bg-indigo-500/10' : ''}`}
+                >
+                  <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center shrink-0 text-xs text-slate-300 font-medium">
+                    {task.studentName.slice(0, 1)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-200 font-medium truncate">{task.studentName}</p>
+                    {task.topic && <p className="text-[10px] text-slate-500 truncate">{task.topic}</p>}
+                    {task.aiSummary && !generating && <p className="text-[10px] text-emerald-500">已有保存反馈</p>}
+                    {generating && (
+                      <p className="text-[10px] flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                        <Loader2 size={9} className="animate-spin" /> 生成中…
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -149,6 +166,22 @@ function FollowUpBubble({ msg }: { msg: FeedbackMessage }) {
   );
 }
 
+// ── 按 taskId 隔离的会话状态 ─────────────────────────────────────────────────
+//   切换任务、切换 tab 都不会打断已有任务的生成；切回任务能看到进行中的内容
+interface GenSession {
+  feedback: string;
+  followUps: FeedbackMessage[];
+  isGenerating: boolean;
+  isFollowUp: boolean;
+  error: string | null;
+  saved: boolean;
+  copied: boolean;
+}
+const EMPTY_SESSION: GenSession = {
+  feedback: '', followUps: [], isGenerating: false, isFollowUp: false,
+  error: null, saved: false, copied: false,
+};
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
   const subscription = useSubscription();
@@ -162,30 +195,61 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     if (selectedTaskId) setSelectedId(selectedTaskId);
   }, [selectedTaskId]);
 
-  const [feedback, setFeedback] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [followUps, setFollowUps] = useState<FeedbackMessage[]>([]);
+  // 跨任务的会话状态总表
+  const [byTask, setByTask] = useState<Record<string, GenSession>>({});
+  // 输入框 / 笔记 / 折叠状态在不同任务间复用；保持轻量
   const [input, setInput] = useState('');
-  const [isFollowUp, setIsFollowUp] = useState(false);
-  const [notesExpanded, setNotesExpanded] = useState(false);
   const [notes, setNotes] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+
+  // 每个任务有独立的 abort controller，互不影响
+  const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const saveNotesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedTask = tasks.find(t => t.id === selectedId) ?? null;
+  const cur = (selectedId && byTask[selectedId]) || EMPTY_SESSION;
+  const { feedback, followUps, isGenerating, isFollowUp, error, saved, copied } = cur;
 
+  /** 局部更新当前任务（或指定任务）的会话状态 */
+  const patchSession = useCallback((id: string, patch: Partial<GenSession>) => {
+    setByTask(s => ({ ...s, [id]: { ...(s[id] ?? EMPTY_SESSION), ...patch } }));
+  }, []);
+
+  // 任务切换：仅同步 notes 显示，不动其它任务的会话；首次进入恢复已保存的 aiSummary
   useEffect(() => {
-    setFeedback(selectedTask?.aiSummary ?? '');
-    setNotes(selectedTask?.notes ?? '');
-    setNotesExpanded(!!(selectedTask?.notes));
-    setFollowUps([]);
-    setError(null);
-    setSaved(false);
-  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedId) return;
+    const task = tasks.find(t => t.id === selectedId);
+    setNotes(task?.notes ?? '');
+    setNotesExpanded(!!task?.notes);
+    setInput('');
+    setByTask(s => {
+      // 如果已有 session（生成中 / 已生成 / 出错过），保持现状
+      if (s[selectedId]) return s;
+      // 否则用任务保存过的 aiSummary 初始化
+      return { ...s, [selectedId]: { ...EMPTY_SESSION, feedback: task?.aiSummary ?? '' } };
+    });
+  }, [selectedId, tasks]);
+
+  // 任务被删除时清理对应的 session 与 controller
+  useEffect(() => {
+    const validIds = new Set(tasks.map(t => t.id));
+    for (const id of Array.from(abortControllers.current.keys())) {
+      if (!validIds.has(id)) {
+        abortControllers.current.get(id)?.abort();
+        abortControllers.current.delete(id);
+      }
+    }
+    setByTask(s => {
+      let changed = false;
+      const next: Record<string, GenSession> = {};
+      for (const [k, v] of Object.entries(s)) {
+        if (validIds.has(k)) next[k] = v;
+        else changed = true;
+      }
+      return changed ? next : s;
+    });
+  }, [tasks]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -209,15 +273,16 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const generate = useCallback(async () => {
     if (!selectedTask) return;
     if (!subscription.requireAccess('feedback').ok) return; // 未登录 → 弹注册
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    const taskId = selectedTask.id;
 
-    setFeedback('');
-    setFollowUps([]);
-    setError(null);
-    setSaved(false);
-    setIsGenerating(true);
+    // 仅取消该任务自身的旧请求；其他任务的生成不受影响
+    abortControllers.current.get(taskId)?.abort();
+    const ctrl = new AbortController();
+    abortControllers.current.set(taskId, ctrl);
+
+    patchSession(taskId, {
+      feedback: '', followUps: [], error: null, saved: false, isGenerating: true,
+    });
 
     const transcript = selectedTask.segments.map(s => s.text).join('');
     const date = new Date(selectedTask.createdAt);
@@ -232,75 +297,103 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         [{ role: 'user', content: userContent }],
         settings,
         ctrl.signal,
-        chunk => setFeedback(prev => prev + chunk),
+        chunk => setByTask(s => {
+          const prev = s[taskId] ?? EMPTY_SESSION;
+          return { ...s, [taskId]: { ...prev, feedback: prev.feedback + chunk } };
+        }),
       );
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;
-      setError(e instanceof Error ? e.message : '生成失败');
+      patchSession(taskId, { error: e instanceof Error ? e.message : '生成失败' });
     } finally {
-      setIsGenerating(false);
-      abortRef.current = null;
+      patchSession(taskId, { isGenerating: false });
+      if (abortControllers.current.get(taskId) === ctrl) {
+        abortControllers.current.delete(taskId);
+      }
     }
-  }, [selectedTask, settings, notes, subscription]);
+  }, [selectedTask, settings, notes, subscription, patchSession]);
 
-  const cancel = () => { abortRef.current?.abort(); setIsGenerating(false); };
+  const cancel = () => {
+    if (!selectedId) return;
+    abortControllers.current.get(selectedId)?.abort();
+    patchSession(selectedId, { isGenerating: false, isFollowUp: false });
+  };
 
   const handleCopy = () => {
+    if (!selectedId) return;
     navigator.clipboard.writeText(feedback);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    patchSession(selectedId, { copied: true });
+    setTimeout(() => patchSession(selectedId, { copied: false }), 2000);
   };
 
   const handleSave = () => {
     if (!selectedId || !feedback) return;
     onSaveToTask(selectedId, feedback);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    patchSession(selectedId, { saved: true });
+    setTimeout(() => patchSession(selectedId, { saved: false }), 3000);
   };
 
   // 追问
   const handleFollowUp = useCallback(async () => {
     const text = input.trim();
-    if (!text || isFollowUp || !feedback) return;
-    if (!subscription.requireAccess('feedback').ok) return; // 未登录 → 弹注册
+    if (!text || !selectedId) return;
+    const session = byTask[selectedId] ?? EMPTY_SESSION;
+    if (session.isFollowUp || !session.feedback) return;
+    if (!subscription.requireAccess('feedback').ok) return;
+
+    const taskId = selectedId;
     setInput('');
-    setIsFollowUp(true);
 
     const userMsg: FeedbackMessage = { role: 'user', content: text };
     const assistantMsg: FeedbackMessage = { role: 'assistant', content: '' };
-    setFollowUps(prev => [...prev, userMsg, assistantMsg]);
+    setByTask(s => {
+      const prev = s[taskId] ?? EMPTY_SESSION;
+      return { ...s, [taskId]: { ...prev, isFollowUp: true, followUps: [...prev.followUps, userMsg, assistantMsg] } };
+    });
 
+    // 追问与主生成共用同一个 task 的 controller —— 同一时刻只允许一种生成在跑
+    abortControllers.current.get(taskId)?.abort();
     const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    abortControllers.current.set(taskId, ctrl);
 
     const history = [
-      { role: 'assistant', content: feedback },
-      ...followUps.map(m => ({ role: m.role, content: m.content })),
+      { role: 'assistant', content: session.feedback },
+      ...session.followUps.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: text },
     ];
 
     try {
       await streamAI(history, settings, ctrl.signal, chunk => {
-        setFollowUps(prev => {
-          const next = [...prev];
-          next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + chunk };
-          return next;
+        setByTask(s => {
+          const prev = s[taskId] ?? EMPTY_SESSION;
+          const next = [...prev.followUps];
+          const last = next[next.length - 1];
+          if (last) next[next.length - 1] = { ...last, content: last.content + chunk };
+          return { ...s, [taskId]: { ...prev, followUps: next } };
         });
       });
     } catch (e: unknown) {
       if ((e as Error).name !== 'AbortError') {
-        setFollowUps(prev => {
-          const next = [...prev];
-          next[next.length - 1] = { ...next[next.length - 1], content: '❌ 请求失败，请重试' };
-          return next;
+        setByTask(s => {
+          const prev = s[taskId] ?? EMPTY_SESSION;
+          const next = [...prev.followUps];
+          if (next.length) next[next.length - 1] = { ...next[next.length - 1], content: '❌ 请求失败，请重试' };
+          return { ...s, [taskId]: { ...prev, followUps: next } };
         });
       }
     } finally {
-      setIsFollowUp(false);
+      patchSession(taskId, { isFollowUp: false });
+      if (abortControllers.current.get(taskId) === ctrl) {
+        abortControllers.current.delete(taskId);
+      }
     }
-  }, [input, isFollowUp, feedback, followUps, settings, subscription]);
+  }, [input, selectedId, byTask, settings, subscription, patchSession]);
 
   const hasFeedback = feedback.length > 0;
+  /** 任务下拉里看到「正在生成」标记 */
+  const generatingTaskIds = new Set(
+    Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)
+  );
 
   const btnStyle = (active = false) => ({
     display: 'flex', alignItems: 'center', gap: 4,
@@ -316,7 +409,12 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       {/* Toolbar */}
       <div className="shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center justify-between" style={{ padding: '8px 12px' }}>
-          <TaskSelector tasks={tasks} selectedId={selectedId} onSelect={id => setSelectedId(id)} />
+          <TaskSelector
+            tasks={tasks}
+            selectedId={selectedId}
+            onSelect={id => setSelectedId(id)}
+            generatingIds={generatingTaskIds}
+          />
           {selectedTask && (
             isGenerating ? (
               <button onClick={cancel} style={{ ...btnStyle(), color: 'var(--red)', background: 'var(--red-dim)', borderColor: '#5a1e1e' }}>
@@ -504,7 +602,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               onBlur={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
             />
             {isFollowUp ? (
-              <button onClick={() => abortRef.current?.abort()}
+              <button onClick={cancel}
                 className="p-2 rounded-xl transition-all"
                 style={{ background: 'var(--red-dim)', border: '1px solid #5a1e1e', color: 'var(--red)' }}>
                 <Square size={14} />
