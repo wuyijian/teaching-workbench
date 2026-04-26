@@ -1,19 +1,15 @@
 import { useState, useEffect } from 'react';
 import {
-  Mic, FileAudio, Sparkles, Download, Check, X,
+  Mic, FileAudio, Sparkles, Download, Check,
   ChevronRight, Zap, BookOpen, MessageSquare,
-  Shield, Copy, CheckCheck, LogIn, UserPlus, LogOut, User,
+  Shield, LogIn, UserPlus, LogOut, User,
   Clock, Users,
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
-import { AuthModal } from './components/AuthModal';
-
-type AuthModalMode = 'login' | 'register' | null;
+import { useSubscription } from './context/SubscriptionContext';
 
 // ─── 商业配置 ────────────────────────────────────────────────────────────────
 const BIZ = {
-  wechatId:       'wuyijian',
-  wechatQR:       '',
   githubReleases: 'https://github.com/wuyijian/teaching-workbench/releases/latest',
 };
 
@@ -22,8 +18,8 @@ const PLANS = [
     name: '探索版', price: '¥0', period: '', desc: '无需配置，开箱即用',
     features: [
       '每月 3 小时转写配额（约 2-3 节课）',
-      '每月 10 次 AI 反馈生成',
-      '5 个学生档案',
+      'AI 课堂反馈生成',
+      '学生档案与笔记',
       '基础 Agent 对话',
       '无需填写任何 API Key',
     ],
@@ -38,7 +34,6 @@ const PLANS = [
       '无限学生档案',
       '完整 Agent 模式',
       '自定义反馈 Prompt 模板',
-      '超额转写 ¥0.10/分钟',
       '邮件优先支持',
     ],
     cta: '立即升级', action: 'pay' as const, highlight: true, badge: '主推',
@@ -52,7 +47,6 @@ const PLANS = [
       '团队管理后台 + 用量统计',
       '专业版全部功能',
       '定制化反馈模板库',
-      '超额转写 ¥0.08/分钟',
       '专属客服 + 电话支持',
     ],
     cta: '联系购买', action: 'pay' as const,
@@ -126,12 +120,10 @@ function SectionHeading({ tag, title, sub }: { tag?: string; title: string; sub?
 
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 export function LandingPage() {
-  const { user, authEnabled, signOut } = useAuth();
+  const { user, authEnabled, signOut, openAuthModal } = useAuth();
+  const { openUpgradeModal } = useSubscription();
 
-  const [scrolled, setScrolled]   = useState(false);
-  const [payModal, setPayModal]   = useState<string | null>(null);
-  const [authModal, setAuthModal] = useState<AuthModalMode>(null);
-  const [copied, setCopied]       = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     const fn = () => { setScrolled(window.scrollY > 40); };
@@ -139,23 +131,16 @@ export function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  // 处理来自工作台的跳转参数
+  // 处理来自工作台的跳转参数（旧链接兼容）
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('register') === '1') {
-      setAuthModal('register');
-      // 清理 URL 参数，避免刷新重复弹出
+      openAuthModal('register');
       window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     }
-  }, []);
+  }, [openAuthModal]);
 
   const goToApp = () => { window.location.href = '/app'; };
-  const copyWechat = () => {
-    navigator.clipboard.writeText(BIZ.wechatId).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
-  };
 
   return (
     <div style={{ fontFamily: 'system-ui, -apple-system, "PingFang SC", "Helvetica Neue", sans-serif', background: C.bg, color: C.text1, lineHeight: 1.6 }}>
@@ -205,10 +190,10 @@ export function LandingPage() {
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button onClick={() => setAuthModal('login')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+                <button onClick={() => openAuthModal('login')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
                   <LogIn size={13} /> 登录
                 </button>
-                <button onClick={() => setAuthModal('register')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
+                <button onClick={() => openAuthModal('register')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
                   <UserPlus size={13} /> 注册
                 </button>
               </div>
@@ -245,10 +230,10 @@ export function LandingPage() {
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 56 }}>
             {authEnabled && !user ? (
               <>
-                <button onClick={() => setAuthModal('register')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 700, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', boxShadow: `0 0 24px ${C.accent}40` }}>
+                <button onClick={() => openAuthModal('register')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 700, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', boxShadow: `0 0 24px ${C.accent}40` }}>
                   <UserPlus size={16} /> 免费注册
                 </button>
-                <button onClick={() => setAuthModal('login')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.borderBright}` }}>
+                <button onClick={() => openAuthModal('login')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.borderBright}` }}>
                   <LogIn size={15} /> 登录
                 </button>
               </>
@@ -364,7 +349,7 @@ export function LandingPage() {
                   ))}
                 </ul>
                 <button
-                  onClick={() => plan.action === 'app' ? goToApp() : setPayModal(plan.name)}
+                  onClick={() => plan.action === 'app' ? goToApp() : openUpgradeModal()}
                   style={{
                     width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer',
                     background: plan.highlight ? C.accent : 'transparent',
@@ -381,7 +366,7 @@ export function LandingPage() {
           </div>
           <p style={{ textAlign: 'center', fontSize: 13, color: C.text3, marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Shield size={13} style={{ color: C.text3 }} />
-            所有数据仅保存在本地设备，不上传服务器，保护学生隐私
+            学生档案 / 笔记仅保存在本地浏览器，转写服务通过加密通道完成
           </p>
         </div>
       </section>
@@ -424,67 +409,21 @@ export function LandingPage() {
             </div>
             <span style={{ fontSize: 13, color: C.text3 }}>语文教学工作台 © 2026</span>
             <span style={{ fontSize: 13, color: C.text3, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Shield size={11} /> 保护学生数据隐私
+              <Shield size={11} /> 学生数据本地优先
             </span>
           </div>
           <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
             <button onClick={goToApp} style={{ fontSize: 13, color: C.text3, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>进入工作台</button>
             <a href={BIZ.githubReleases} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: C.text3, textDecoration: 'none' }}>GitHub</a>
             {authEnabled && !user && (
-              <button onClick={() => setAuthModal('register')} style={{ fontSize: 13, color: C.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>注册账号</button>
+              <button onClick={() => openAuthModal('register')} style={{ fontSize: 13, color: C.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>注册账号</button>
             )}
           </div>
         </div>
       </footer>
 
-      {/* ── Modals ──────────────────────────────────────────────────────────── */}
-      {payModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-          onClick={() => setPayModal(null)}>
-          <div style={{ background: C.bgCard, border: `1px solid ${C.borderBright}`, borderRadius: 22, padding: '32px 28px', maxWidth: 360, width: '100%', boxSizing: 'border-box' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-              <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: C.text1 }}>购买 {payModal}</h3>
-                <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>扫码付款，工作日 24h 内发送激活码</p>
-              </div>
-              <button onClick={() => setPayModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, padding: 4 }}>
-                <X size={18} />
-              </button>
-            </div>
-            <div style={{ width: '100%', aspectRatio: '1', borderRadius: 14, background: '#fff', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              {BIZ.wechatQR ? (
-                <img src={BIZ.wechatQR} alt="微信收款码" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : (
-                <div style={{ textAlign: 'center', padding: 24 }}>
-                  <div style={{ width: 100, height: 100, border: '2px dashed #ccc', borderRadius: 8, margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 28 }}>💳</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: '#888', lineHeight: 1.6, margin: 0 }}>
-                    请将收款码图片放入 <code>public/</code><br />
-                    并更新 <code>BIZ.wechatQR</code>
-                  </p>
-                </div>
-              )}
-            </div>
-            <div style={{ background: C.bgCard2, borderRadius: 10, padding: '12px 16px', marginBottom: 18, border: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.75, margin: 0 }}>
-                付款后请添加微信 <strong style={{ color: C.text1 }}>{BIZ.wechatId}</strong>，备注「{payModal}」，工作日内 24 小时发送激活码。
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setPayModal(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text2, border: `1px solid ${C.borderBright}` }}>取消</button>
-              <button onClick={copyWechat} style={{ flex: 1, padding: '10px 0', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: C.green, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {copied ? <><CheckCheck size={14} /> 已复制</> : <><Copy size={14} /> 复制微信号</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {authModal && (
-        <AuthModal initialMode={authModal} onClose={() => setAuthModal(null)} onSuccess={goToApp} />
-      )}
+      {/* AuthModal / UpgradeModal 已挂在 AuthProvider / SubscriptionProvider 内，
+          通过 openAuthModal / openUpgradeModal 全局唤起 */}
     </div>
   );
 }

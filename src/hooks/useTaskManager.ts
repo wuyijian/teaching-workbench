@@ -4,6 +4,39 @@ import { getPlatformXfCredentials } from '../config/platformApi';
 import type { TranscriptSegment } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 
+/** 守门 / 配额回调，由调用方（App）从 SubscriptionContext 注入 */
+export interface QuotaApi {
+  /** 任务执行前调用：未登录或额度不足时返回 false（同时已弹 AuthModal/UpgradeModal） */
+  requireTranscribe: (estimatedMinutes: number) => boolean;
+  /** 任务完成后扣量 */
+  recordUsage:       (durationMinutes: number) => void | Promise<void>;
+}
+
+/** 用 <audio> metadata 估算时长（秒） */
+function estimateDurationSec(file: File): Promise<number> {
+  return new Promise<number>(resolve => {
+    try {
+      const audio = document.createElement('audio');
+      audio.preload = 'metadata';
+      const url = URL.createObjectURL(file);
+      const cleanup = () => { URL.revokeObjectURL(url); };
+      audio.src = url;
+      const timeout = setTimeout(() => { cleanup(); resolve(0); }, 8000);
+      audio.addEventListener('loadedmetadata', () => {
+        clearTimeout(timeout);
+        const d = isFinite(audio.duration) ? audio.duration : 0;
+        cleanup();
+        resolve(d);
+      });
+      audio.addEventListener('error', () => {
+        clearTimeout(timeout);
+        cleanup();
+        resolve(0);
+      });
+    } catch { resolve(0); }
+  });
+}
+
 const STORAGE_KEY = 'tw-tasks';
 const ARCHIVED_STUDENTS_KEY = 'tw-archived-students';
 
@@ -165,7 +198,7 @@ async function transcribeXfyun(
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
-export function useTaskManager(settings: Settings, language: string) {
+export function useTaskManager(settings: Settings, language: string, quotaApi?: QuotaApi) {
   const [tasks, setTasks] = useState<Task[]>(() => INITIAL_DATA.tasks);
   const [archivedStudents, setArchivedStudents] = useState<ArchivedStudentsState>(() => INITIAL_DATA.mergedArchived);
 
@@ -175,11 +208,13 @@ export function useTaskManager(settings: Settings, language: string) {
   const runningRef = useRef(false);                 // 当前是否有任务在执行
   const pendingRef = useRef(new Map<string, File>());
 
-  // 让 drain 始终拿到最新 settings / language，避免闭包旧值
+  // 让 drain 始终拿到最新 settings / language / quotaApi，避免闭包旧值
   const settingsRef = useRef(settings);
   const languageRef = useRef(language);
+  const quotaApiRef = useRef(quotaApi);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { languageRef.current = language; }, [language]);
+  useEffect(() => { quotaApiRef.current = quotaApi; }, [quotaApi]);
 
   useEffect(() => { saveTasks(tasks); }, [tasks]);
   useEffect(() => { saveArchivedStudents(archivedStudents); }, [archivedStudents]);
@@ -209,12 +244,27 @@ export function useTaskManager(settings: Settings, language: string) {
     const onProgress = (p: number) => patch(id, { progress: p });
     const shouldStop  = () => stopFlags.current.get(id) === true;
 
+    // ── 配额守门：估算时长，未登录 / 额度不足直接终止 ──────────────────────
+    const qApi = quotaApiRef.current;
+    const estSec = await estimateDurationSec(file);
+    const estMin = Math.max(1, Math.ceil(estSec / 60));
+    if (qApi && !qApi.requireTranscribe(estMin)) {
+      patch(id, { status: 'error', error: '配额不足或未登录，请先登录或升级方案' });
+      pendingRef.current.delete(id);
+      stopFlags.current.delete(id);
+      runningRef.current = false;
+      drain();
+      return;
+    }
+
     patch(id, { status: 'uploading', progress: 5 });
 
     try {
       const segments = await transcribeXfyun(file, s, l, onProgress, shouldStop);
       if (!stopFlags.current.get(id)) {
         patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
+        // 扣量：使用估算时长（来自音频元数据，已是真实总长）
+        if (qApi) await qApi.recordUsage(estMin);
       }
     } catch (err: unknown) {
       if (!stopFlags.current.get(id)) {

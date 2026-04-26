@@ -18,6 +18,12 @@ const proxy = {
     changeOrigin: true,
     rewrite: (path: string) => path.replace(/^\/openai-api/, ''),
   },
+  /** 本地连 Kimi 时用 /moonshot-api/v1，避免浏览器直连 api.moonshot.cn 的 CORS */
+  '/moonshot-api': {
+    target: 'https://api.moonshot.cn',
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/moonshot-api/, ''),
+  },
 } as const
 
 export default defineConfig({

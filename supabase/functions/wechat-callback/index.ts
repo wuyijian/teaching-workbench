@@ -23,17 +23,16 @@ const WECHAT_APP_SECRET = Deno.env.get('WECHAT_APP_SECRET')!;
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-// 允许的前端域名（生产环境改为你的实际域名，多个用逗号分隔）
+// 允许的前端域名（生产环境必须显式配置 ALLOWED_ORIGINS Secret，多个用逗号分隔）
+// 未配置时只放 localhost，避免开发时不便；生产环境部署前请务必在
+// Supabase Dashboard → Edge Functions → Secrets 中设置
 const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map(s => s.trim()).filter(Boolean);
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  // 开发时允许 localhost；生产时通过环境变量配置
-  const allowed =
-    ALLOWED_ORIGINS.length === 0 ||          // 未配置则宽松（方便开发）
-    ALLOWED_ORIGINS.includes(origin) ||
-    origin.startsWith('http://localhost') ||
-    origin.startsWith('http://127.0.0.1');
+  const isLocalhost = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
+  // 安全策略：生产必须把域名加入 ALLOWED_ORIGINS；本地开发自动放行 localhost
+  const allowed = ALLOWED_ORIGINS.includes(origin) || isLocalhost;
   return {
     'Access-Control-Allow-Origin':  allowed ? origin : 'null',
     'Access-Control-Allow-Headers': 'authorization, content-type',

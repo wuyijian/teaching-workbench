@@ -9,6 +9,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT } from './TaskPanel';
 import { resolveApiBase } from '../config/urls';
 import { hasPlatformLlm } from '../config/platformApi';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // Resolve the effective prompt: settings override → built-in default
 export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
@@ -150,6 +151,7 @@ function FollowUpBubble({ msg }: { msg: FeedbackMessage }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
+  const subscription = useSubscription();
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (selectedTaskId) return selectedTaskId;
     const done = tasks.filter(t => t.status === 'done');
@@ -206,6 +208,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   const generate = useCallback(async () => {
     if (!selectedTask) return;
+    if (!subscription.requireAccess('feedback').ok) return; // 未登录 → 弹注册
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -238,7 +241,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       setIsGenerating(false);
       abortRef.current = null;
     }
-  }, [selectedTask, settings, notes]);
+  }, [selectedTask, settings, notes, subscription]);
 
   const cancel = () => { abortRef.current?.abort(); setIsGenerating(false); };
 
@@ -259,6 +262,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const handleFollowUp = useCallback(async () => {
     const text = input.trim();
     if (!text || isFollowUp || !feedback) return;
+    if (!subscription.requireAccess('feedback').ok) return; // 未登录 → 弹注册
     setInput('');
     setIsFollowUp(true);
 
@@ -294,7 +298,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     } finally {
       setIsFollowUp(false);
     }
-  }, [input, isFollowUp, feedback, followUps, settings]);
+  }, [input, isFollowUp, feedback, followUps, settings, subscription]);
 
   const hasFeedback = feedback.length > 0;
 

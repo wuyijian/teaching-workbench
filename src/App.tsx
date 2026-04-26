@@ -30,7 +30,7 @@ function loadSettings(): Settings {
 }
 
 export default function App() {
-  const { user, authEnabled, signOut } = useAuth();
+  const { user, authEnabled, signOut, openAuthModal } = useAuth();
   const subscription = useSubscription();
 
   // 工作台模式：body 锁高禁滚；卸载时恢复（落地页需要滚动）
@@ -45,7 +45,11 @@ export default function App() {
   const [language, setLanguage] = useState(settings.language || 'zh-CN');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  const taskManager = useTaskManager(settings, language);
+  // 把订阅守门 + 扣量注入任务管理器
+  const taskManager = useTaskManager(settings, language, {
+    requireTranscribe: (estMin: number) => subscription.requireAccess('transcribe', estMin).ok,
+    recordUsage: (mins: number) => subscription.recordUsage(mins),
+  });
 
   const needsConfig = !hasPlatformLlm() || !hasPlatformXf();
 
@@ -154,19 +158,19 @@ export default function App() {
 
           {/* Web 模式：升级入口（免费版或接近超额时高亮） */}
           {!isElectronTarget && (
-            <a
-              href="/#pricing"
+            <button
+              onClick={() => subscription.openUpgradeModal()}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
               style={
                 subscription.plan === 'free' || subscription.remainingMinutes < 30
-                  ? { background: 'linear-gradient(to right,#7c2d12,#1a1a40)', border: '1px solid #c2410c80', color: '#fb923c', textDecoration: 'none' }
-                  : { background: 'linear-gradient(to right, #1a2a4f, #1a1a40)', border: '1px solid #2a3f6f', color: '#7ba7ff', textDecoration: 'none' }
+                  ? { background: 'linear-gradient(to right,#7c2d12,#1a1a40)', border: '1px solid #c2410c80', color: '#fb923c', cursor: 'pointer' }
+                  : { background: 'linear-gradient(to right, #1a2a4f, #1a1a40)', border: '1px solid #2a3f6f', color: '#7ba7ff', cursor: 'pointer' }
               }
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
             >
               <Zap size={11} /> 升级方案
-            </a>
+            </button>
           )}
 
           {/* Web 模式：返回落地页 */}
@@ -210,15 +214,15 @@ export default function App() {
 
           {/* Web 模式 + 未登录：注册入口 */}
           {!isElectronTarget && authEnabled && !user && (
-            <a
-              href="/?register=1"
+            <button
+              onClick={() => openAuthModal('register')}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
-              style={{ background: 'var(--accent)', color: '#fff', border: 'none', textDecoration: 'none' }}
+              style={{ background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
             >
               <User size={11} /> 注册登录
-            </a>
+            </button>
           )}
 
         <button

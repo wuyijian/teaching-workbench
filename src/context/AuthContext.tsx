@@ -1,8 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { AuthModal } from '../components/AuthModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+export type AuthModalMode = 'login' | 'register';
 
 export interface AuthContextValue {
   user: User | null;
@@ -13,6 +16,9 @@ export interface AuthContextValue {
   /** 返回 null 表示成功；返回 { needsConfirm: true } 表示需验证邮件 */
   signUp: (email: string, password: string) => Promise<string | { needsConfirm: true } | null>;
   signOut: () => Promise<void>;
+  /** 全局打开登录/注册弹窗。authEnabled=false 时自动 no-op */
+  openAuthModal: (mode?: AuthModalMode) => void;
+  closeAuthModal: () => void;
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -24,6 +30,8 @@ const AuthContext = createContext<AuthContextValue>({
   signIn: async () => null,
   signUp: async () => null,
   signOut: async () => {},
+  openAuthModal: () => {},
+  closeAuthModal: () => {},
 });
 
 // ─── Provider ────────────────────────────────────────────────────────────────
@@ -31,6 +39,7 @@ const AuthContext = createContext<AuthContextValue>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(!!supabase);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -57,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return null;
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return localizeError(error.message);
-    // Supabase 开启邮件验证时，session 为 null，identities 非空
     const needsConfirm = !data.session && (data.user?.identities?.length ?? 0) > 0;
     return needsConfirm ? { needsConfirm: true } : null;
   }, []);
@@ -67,9 +75,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  const openAuthModal = useCallback((mode: AuthModalMode = 'login') => {
+    if (!supabase) return; // Electron / 无 Supabase 时无意义
+    setAuthModalMode(mode);
+  }, []);
+
+  const closeAuthModal = useCallback(() => setAuthModalMode(null), []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, authEnabled: !!supabase, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{
+      user, loading,
+      authEnabled: !!supabase,
+      signIn, signUp, signOut,
+      openAuthModal, closeAuthModal,
+    }}>
       {children}
+      {authModalMode && (
+        <AuthModal
+          initialMode={authModalMode}
+          onClose={closeAuthModal}
+          onSuccess={closeAuthModal}
+        />
+      )}
     </AuthContext.Provider>
   );
 }

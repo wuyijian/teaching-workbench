@@ -7,6 +7,7 @@ import { useAgent, type AgentMessage, type ToolCallDisplay } from '../agent/useA
 import type { StudentFile } from '../agent/tools';
 import type { Task, Settings } from '../types';
 import { hasPlatformLlm } from '../config/platformApi';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // ─── Quick Actions ─────────────────────────────────────────────────────────────
 
@@ -420,6 +421,7 @@ interface Props {
 }
 
 export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
+  const subscription = useSubscription();
   const {
     messages, toolLog, globalMemory, studentFiles,
     running, send, stop, clear,
@@ -443,6 +445,7 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
   const handleSend = () => {
     const text = input.trim();
     if (!text || running) return;
+    if (!subscription.requireAccess('agent').ok) return; // 未登录 → 弹注册
     setInput('');
     send(text);
     setTimeout(() => textareaRef.current?.focus(), 0);
