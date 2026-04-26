@@ -17,6 +17,10 @@ dist-ssr
 # Electron build output
 release/
 
+# Local artifacts (commit message drafts etc.)
+.commit-msg.tmp
+*.tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
