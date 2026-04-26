@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Task, Settings } from '../types';
+import { getPlatformXfCredentials } from '../config/platformApi';
 import type { TranscriptSegment } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 
@@ -86,20 +87,21 @@ function mapLanguage(lang: string) {
 // ── iFlytek ──────────────────────────────────────────────────────────────────
 async function transcribeXfyun(
   file: File,
-  settings: Settings,
+  _settings: Settings,
   language: string,
   onProgress: (p: number) => void,
   shouldStop: () => boolean,
 ): Promise<TranscriptSegment[]> {
-  if (!settings.xfAppId || !settings.xfAccessKeyId || !settings.xfAccessKeySecret) {
-    throw new Error('请先配置讯飞 AppID / AccessKeyID / AccessKeySecret');
+  const { xfAppId, xfAccessKeyId, xfAccessKeySecret } = getPlatformXfCredentials();
+  if (!xfAppId || !xfAccessKeyId || !xfAccessKeySecret) {
+    throw new Error('转写服务未在服务端配置，请联系管理员');
   }
 
   // 1. 上传
   const signatureRandom = randomStr(16);
   const uploadParams: Record<string, string> = {
-    appId: settings.xfAppId,
-    accessKeyId: settings.xfAccessKeyId,
+    appId: xfAppId,
+    accessKeyId: xfAccessKeyId,
     dateTime: getDateTime(),
     signatureRandom,
     fileSize: String(file.size),
@@ -108,7 +110,7 @@ async function transcribeXfyun(
     durationCheckDisable: 'true',
     pd: 'edu',
   };
-  const uploadSig = await buildSignature(uploadParams, settings.xfAccessKeySecret);
+  const uploadSig = await buildSignature(uploadParams, xfAccessKeySecret);
   const query = Object.entries(uploadParams).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 
   onProgress(10);
@@ -137,13 +139,13 @@ async function transcribeXfyun(
     if (shouldStop()) throw new Error('已取消');
 
     const pollParams: Record<string, string> = {
-      accessKeyId: settings.xfAccessKeyId,
+      accessKeyId: xfAccessKeyId,
       dateTime: getDateTime(),
       signatureRandom,
       orderId,
       resultType: 'transfer',
     };
-    const pollSig = await buildSignature(pollParams, settings.xfAccessKeySecret);
+    const pollSig = await buildSignature(pollParams, xfAccessKeySecret);
     const pq = Object.entries(pollParams).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
     const pResp = await fetch(`${xfyunProxyBase}/v2/getResult?${pq}`, {
       method: 'POST',

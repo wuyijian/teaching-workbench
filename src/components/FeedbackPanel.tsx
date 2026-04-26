@@ -14,6 +14,7 @@ export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): 
   return p && p.length > 0 ? p : FEEDBACK_PROMPT;
 }
 import { resolveApiBase } from '../config/urls';
+import { hasPlatformLlm } from '../config/platformApi';
 
 interface FeedbackMessage {
   role: 'user' | 'assistant';
@@ -35,9 +36,9 @@ async function streamAI(
   signal: AbortSignal,
   onChunk: (c: string) => void,
 ) {
-  if (!settings.apiKey) {
+  if (!hasPlatformLlm()) {
     await new Promise(r => setTimeout(r, 600));
-    onChunk('（演示模式）请在右上角「设置」中配置 API Key 以启用真实 AI 生成。');
+    onChunk('（演示模式）服务端未配置大模型 API（VITE_LLM_API_KEY），无法调用真实生成。');
     return;
   }
   const base = resolveApiBase(settings.apiBaseUrl);

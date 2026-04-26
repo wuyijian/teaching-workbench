@@ -18,16 +18,18 @@ export interface RecordingState {
   duration: number;
 }
 
+/**
+ * 运行时由 mergePlatformApiSettings 组装：大模型 + 讯飞从 VITE_* 注入；
+ * 仅 language / feedbackPrompt 由用户经设置持久化到 localStorage。
+ */
 export interface Settings {
   apiKey: string;
   apiBaseUrl: string;
   model: string;
   language: string;
-  // 讯飞大模型转写
   xfAppId: string;
   xfAccessKeyId: string;
   xfAccessKeySecret: string;
-  // 课堂反馈 Prompt（为空时使用内置默认值）
   feedbackPrompt?: string;
 }
 

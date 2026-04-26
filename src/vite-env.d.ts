@@ -20,6 +20,14 @@ interface ImportMetaEnv {
    * AppSecret 不要放前端！配置到 Supabase Edge Function Secrets
    */
   readonly VITE_WECHAT_APP_ID?: string
+  /** OpenAI 兼容大模型（课堂反馈、Agent、转写后问答等） */
+  readonly VITE_LLM_API_KEY?: string
+  readonly VITE_LLM_BASE_URL?: string
+  readonly VITE_LLM_MODEL?: string
+  /** 讯飞转写 */
+  readonly VITE_XF_APP_ID?: string
+  readonly VITE_XF_ACCESS_KEY_ID?: string
+  readonly VITE_XF_ACCESS_KEY_SECRET?: string
 }
 
 interface ImportMeta {

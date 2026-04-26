@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
-import type { TranscriptSegment, Settings } from '../types';
+import type { TranscriptSegment } from '../types';
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
 import { xfyunProxyBase } from '../config/urls';
+import { getPlatformXfCredentials } from '../config/platformApi';
 
 export type XfyunStatus = 'idle' | 'uploading' | 'transcribing' | 'done' | 'error';
 
@@ -21,15 +22,6 @@ function mapLanguage(lang: string): string {
   return 'autodialect';
 }
 
-// ── 平台 API Key（优先读取平台环境变量，回退到用户自填） ──────────────────────
-function resolveXfCredentials(settings: Settings) {
-  return {
-    xfAppId:          import.meta.env.VITE_XF_APP_ID          || settings.xfAppId,
-    xfAccessKeyId:    import.meta.env.VITE_XF_ACCESS_KEY_ID   || settings.xfAccessKeyId,
-    xfAccessKeySecret:import.meta.env.VITE_XF_ACCESS_KEY_SECRET|| settings.xfAccessKeySecret,
-  };
-}
-
 /** 获取音频文件时长（分钟），用于扣减配额 */
 async function getAudioDurationMinutes(file: File): Promise<number> {
   return new Promise(resolve => {
@@ -42,7 +34,7 @@ async function getAudioDurationMinutes(file: File): Promise<number> {
   });
 }
 
-export function useXfyunTranscription(settings: Settings) {
+export function useXfyunTranscription() {
   const [status, setStatus] = useState<XfyunStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -55,7 +47,7 @@ export function useXfyunTranscription(settings: Settings) {
 
   // ── 1. 上传音频，获取 orderId ──
   async function uploadAudio(file: File, language: string): Promise<string> {
-    const { xfAppId, xfAccessKeyId, xfAccessKeySecret: _ } = resolveXfCredentials(settings);
+    const { xfAppId, xfAccessKeyId, xfAccessKeySecret } = getPlatformXfCredentials();
     const dateTime = getDateTime();
     const signatureRandom = randomStr(16);
 
@@ -71,7 +63,7 @@ export function useXfyunTranscription(settings: Settings) {
       pd: 'edu',
     };
 
-    const signature = await buildSignature(params, settings.xfAccessKeySecret);
+    const signature = await buildSignature(params, xfAccessKeySecret);
 
     // 构造 URL query string（值需 URL 编码）
     const query = Object.entries(params)
@@ -116,7 +108,7 @@ export function useXfyunTranscription(settings: Settings) {
       if (stopRef.current) throw new Error('已取消');
 
       const dateTime = getDateTime();
-      const { xfAccessKeyId, xfAccessKeySecret } = resolveXfCredentials(settings);
+      const { xfAccessKeyId, xfAccessKeySecret } = getPlatformXfCredentials();
       const params: Record<string, string> = {
         accessKeyId: xfAccessKeyId,
         dateTime,
@@ -164,7 +156,7 @@ export function useXfyunTranscription(settings: Settings) {
     language: string,
     onComplete?: (durationMinutes: number) => void,
   ) => {
-    const { xfAppId, xfAccessKeyId, xfAccessKeySecret } = resolveXfCredentials(settings);
+    const { xfAppId, xfAccessKeyId, xfAccessKeySecret } = getPlatformXfCredentials();
     if (!xfAppId || !xfAccessKeyId || !xfAccessKeySecret) {
       setError('平台转写服务未配置，请联系管理员');
       setStatus('error');
@@ -203,8 +195,7 @@ export function useXfyunTranscription(settings: Settings) {
       setError(msg);
       setStatus('error');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings]);
+  }, []);
 
   const reset = useCallback(() => {
     stopRef.current = true;

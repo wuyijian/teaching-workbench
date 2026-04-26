@@ -200,7 +200,7 @@ export function useFileTranscription(settings: Settings) {
     stopRef.current = false;
 
     if (!settings.apiKey) {
-      setError('请先在设置中配置 API Key，才能使用 Whisper 文件转写功能');
+      setError('Whisper 转写需配置 VITE_LLM_API_KEY（OpenAI 兼容 Key）');
       setStatus('error');
       return;
     }

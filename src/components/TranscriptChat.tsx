@@ -3,6 +3,7 @@ import { Send, Square, Trash2, MessageSquare, Lightbulb } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { resolveApiBase } from '../config/urls';
+import { hasPlatformLlm } from '../config/platformApi';
 
 interface Message { id: string; role: 'user' | 'assistant'; content: string; }
 interface Props { task: Task | null; settings: Settings; }
@@ -22,9 +23,9 @@ async function streamChat(
   signal: AbortSignal,
   onChunk: (c: string) => void,
 ) {
-  if (!settings.apiKey) {
+  if (!hasPlatformLlm()) {
     await new Promise(r => setTimeout(r, 400));
-    onChunk('（演示模式）请在设置中配置 API Key 以启用真实问答。');
+    onChunk('（演示模式）服务端未配置大模型 API（VITE_LLM_API_KEY），无法启用真实问答。');
     return;
   }
   const url = `${resolveApiBase(settings.apiBaseUrl)}/chat/completions`;

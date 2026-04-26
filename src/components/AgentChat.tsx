@@ -6,6 +6,7 @@ import {
 import { useAgent, type AgentMessage, type ToolCallDisplay } from '../agent/useAgent';
 import type { StudentFile } from '../agent/tools';
 import type { Task, Settings } from '../types';
+import { hasPlatformLlm } from '../config/platformApi';
 
 // ─── Quick Actions ─────────────────────────────────────────────────────────────
 
@@ -431,7 +432,7 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isEmpty = messages.length === 0;
-  const hasApiKey = !!(settings.apiKey);
+  const hasApiKey = hasPlatformLlm();
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -546,7 +547,7 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
                 className="text-xs px-4 py-3 rounded-xl text-center"
                 style={{ background: '#2a1a0a', border: '1px solid #5a3d0a', color: 'var(--amber)', maxWidth: 340 }}
               >
-                ⚠️ 请先在「设置」中配置 API Key，才能使用 AI 功能
+                ⚠️ 服务端未配置大模型 API（VITE_LLM_API_KEY），无法使用 AI 功能
               </div>
             )}
 

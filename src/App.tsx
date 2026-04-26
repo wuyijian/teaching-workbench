@@ -10,39 +10,23 @@ import { AgentChat } from './components/AgentChat';
 
 type AppMode = 'workbench' | 'archive' | 'agent';
 import { useTaskManager } from './hooks/useTaskManager';
-import { defaultOpenAiCompatibleBase, isElectronTarget, isRunningInElectron } from './config/app';
+import { isElectronTarget, isRunningInElectron } from './config/app';
+import { mergePlatformApiSettings, hasPlatformLlm, hasPlatformXf } from './config/platformApi';
 import type { Settings } from './types';
 
-const DEFAULT_SETTINGS: Settings = {
-  apiKey: '',
-  apiBaseUrl: defaultOpenAiCompatibleBase,
-  model: 'gpt-4o-mini',
-  language: 'zh-CN',
-  xfAppId: '',
-  xfAccessKeyId: '',
-  xfAccessKeySecret: '',
-};
+function loadUserPrefsFromStorage(): { language: string; feedbackPrompt?: string } {
+  try {
+    const raw = localStorage.getItem('tw-settings');
+    if (!raw) return { language: 'zh-CN' };
+    const p = JSON.parse(raw) as { language?: string; feedbackPrompt?: string };
+    return { language: p.language || 'zh-CN', feedbackPrompt: p.feedbackPrompt };
+  } catch {
+    return { language: 'zh-CN' };
+  }
+}
 
 function loadSettings(): Settings {
-  const web = !isElectronTarget;
-  try {
-    const s = localStorage.getItem('tw-settings');
-    const next: Settings = s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : { ...DEFAULT_SETTINGS };
-
-    if (web && next.apiBaseUrl === 'https://api.openai.com/v1') {
-      // 网页版：直连 OpenAI 会被 CORS 拦截，改走同域反代
-      next.apiBaseUrl = defaultOpenAiCompatibleBase;
-    }
-
-    if (!web && next.apiBaseUrl.startsWith('/')) {
-      // Electron：file:// 无法解析相对路径，还原为直连地址
-      next.apiBaseUrl = 'https://api.openai.com/v1';
-    }
-
-    return next;
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+  return mergePlatformApiSettings(loadUserPrefsFromStorage());
 }
 
 export default function App() {
@@ -63,17 +47,20 @@ export default function App() {
 
   const taskManager = useTaskManager(settings, language);
 
-  const platformXfReady = !!(
-    import.meta.env.VITE_XF_APP_ID &&
-    import.meta.env.VITE_XF_ACCESS_KEY_ID &&
-    import.meta.env.VITE_XF_ACCESS_KEY_SECRET
-  );
-  const hasXfCredentials = platformXfReady || !!(settings.xfAppId && settings.xfAccessKeyId && settings.xfAccessKeySecret);
-  const needsConfig = !settings.apiKey && !hasXfCredentials;
+  const needsConfig = !hasPlatformLlm() || !hasPlatformXf();
 
   const handleSaveSettings = useCallback((s: Settings) => {
-    setSettings(s);
-    localStorage.setItem('tw-settings', JSON.stringify(s));
+    const next = mergePlatformApiSettings({
+      language: s.language,
+      feedbackPrompt: s.feedbackPrompt,
+    });
+    setSettings(next);
+    try {
+      localStorage.setItem('tw-settings', JSON.stringify({
+        language: next.language,
+        feedbackPrompt: next.feedbackPrompt,
+      }));
+    } catch { /* */ }
   }, []);
 
   const handleLanguageChange = useCallback((lang: string) => {
@@ -260,7 +247,7 @@ export default function App() {
           }}
         >
           <SettingsIcon size={13} />
-          {needsConfig ? '配置服务' : '设置'}
+          {needsConfig ? '环境未就绪' : '设置'}
         </button>
         </div>
       </header>
@@ -273,7 +260,7 @@ export default function App() {
             <div className="shrink-0" style={{ width: 300 }}>
               <TaskPanel
                 tasks={taskManager.tasks}
-                hasXfCredentials={hasXfCredentials}
+                hasXfCredentials={hasPlatformXf()}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={setSelectedTaskId}
                 onCreateTask={handleCreateTask}

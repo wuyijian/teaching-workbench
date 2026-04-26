@@ -190,7 +190,7 @@ export function FileUploadPanel({
           <p className="text-xs text-slate-600 text-center px-4">
             {hasXfCredentials
               ? '讯飞大模型 · 支持 202 种方言 · 教育领域优化'
-              : '请先在设置中配置讯飞 AppID / AccessKeyID / AccessKeySecret'}
+              : '转写服务需由部署方配置 VITE_XF_* 环境变量'}
           </p>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { ChatMessage, Settings } from '../types';
 import { resolveApiBase } from '../config/urls';
+import { hasPlatformLlm } from '../config/platformApi';
 
 function generateId() {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -81,10 +82,10 @@ export function useChat(settings: Settings) {
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsLoading(true);
 
-    if (!settings.apiKey) {
+    if (!hasPlatformLlm()) {
       // Demo mode
       await new Promise(r => setTimeout(r, 800));
-      const demo = `（演示模式）您提问了：「${userText}」\n\n请在右上角设置中填写 API Key 以启用真实 AI 回答。`;
+      const demo = `（演示模式）您提问了：「${userText}」\n\n服务端未配置 VITE_LLM_API_KEY 时无法调用真实 AI。`;
       setMessages(prev =>
         prev.map(m => m.id === assistantId ? { ...m, content: demo } : m)
       );
