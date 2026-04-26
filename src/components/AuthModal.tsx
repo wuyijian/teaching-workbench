@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { X, Mail, Lock, Eye, EyeOff, Loader2, CheckCircle2, BookOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { WechatLoginModal } from './WechatLoginModal';
 
 type Mode = 'login' | 'register';
 
@@ -20,6 +21,9 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [success, setSuccess]     = useState(false);
+  const [showWxModal, setShowWxModal] = useState(false);
+
+  const wechatEnabled = !!import.meta.env.VITE_WECHAT_APP_ID;
 
   const switchMode = useCallback((m: Mode) => {
     setMode(m);
@@ -205,8 +209,39 @@ export function AuthModal({ initialMode = 'login', onClose, onSuccess }: Props) 
               {mode === 'login' ? '立即注册' : '立即登录'}
             </button>
           </p>
+
+          {/* WeChat divider */}
+          {wechatEnabled && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0' }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span style={{ fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>或使用第三方登录</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+
+              {/* WeChat button */}
+              <button
+                type="button"
+                onClick={() => setShowWxModal(true)}
+                style={{
+                  width: '100%', padding: '10px 0', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  background: '#07c160', color: '#fff', border: 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                {/* WeChat icon */}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                  <path d="M8.5 11a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm7 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM3.5 8C3.5 4.41 7.36 1.5 12 1.5S20.5 4.41 20.5 8c0 3.59-3.86 6.5-8.5 6.5-.78 0-1.54-.09-2.26-.25L7 16.5l.93-2.57C5.4 12.75 3.5 10.51 3.5 8z"/>
+                </svg>
+                微信扫码登录
+              </button>
+            </>
+          )}
         </form>
       </div>
+
+      {/* WeChat QR modal stacked on top */}
+      {showWxModal && <WechatLoginModal onClose={() => setShowWxModal(false)} />}
     </div>
   );
 }

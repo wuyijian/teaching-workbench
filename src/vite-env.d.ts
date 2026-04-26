@@ -15,6 +15,11 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string
   /** Supabase 匿名公钥（anon key） */
   readonly VITE_SUPABASE_ANON_KEY?: string
+  /**
+   * 微信开放平台 AppID（网站应用）
+   * AppSecret 不要放前端！配置到 Supabase Edge Function Secrets
+   */
+  readonly VITE_WECHAT_APP_ID?: string
 }
 
 interface ImportMeta {
