@@ -115,6 +115,16 @@ export function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
+  // 处理来自工作台的跳转参数
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('register') === '1') {
+      setAuthModal('register');
+      // 清理 URL 参数，避免刷新重复弹出
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    }
+  }, []);
+
   const goToApp = () => { window.location.href = '/app'; };
   const copyWechat = () => {
     navigator.clipboard.writeText(BIZ.wechatId).then(() => {

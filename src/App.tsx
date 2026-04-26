@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Settings as SettingsIcon, BookOpen, LogOut, User } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { TaskPanel } from './components/TaskPanel';
 import { RightPanel } from './components/RightPanel';
@@ -112,6 +112,34 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2 no-drag">
+
+          {/* Web 模式：升级入口 */}
+          {!isElectronTarget && (
+            <a
+              href="/#pricing"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+              style={{ background: 'linear-gradient(to right, #1a2a4f, #1a1a40)', border: '1px solid #2a3f6f', color: '#7ba7ff', textDecoration: 'none' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4d7fff80'; (e.currentTarget as HTMLElement).style.color = '#a8c8ff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2a3f6f'; (e.currentTarget as HTMLElement).style.color = '#7ba7ff'; }}
+            >
+              <Zap size={11} /> 升级方案
+            </a>
+          )}
+
+          {/* Web 模式：返回落地页 */}
+          {!isElectronTarget && (
+            <a
+              href="/"
+              title="返回首页"
+              className="flex items-center justify-center p-1.5 rounded-lg transition-all"
+              style={{ color: 'var(--text-3)', border: '1px solid var(--border)', background: 'transparent', textDecoration: 'none' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+            >
+              <Home size={13} />
+            </a>
+          )}
+
           {/* 用户状态（Web 模式 + 已配置 Supabase） */}
           {authEnabled && user && (
             <div className="flex items-center gap-2">
@@ -133,6 +161,19 @@ export default function App() {
                 <LogOut size={12} />
               </button>
             </div>
+          )}
+
+          {/* Web 模式 + 未登录：注册入口 */}
+          {!isElectronTarget && authEnabled && !user && (
+            <a
+              href="/?register=1"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+              style={{ background: 'var(--accent)', color: '#fff', border: 'none', textDecoration: 'none' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+            >
+              <User size={11} /> 注册登录
+            </a>
           )}
 
         <button
