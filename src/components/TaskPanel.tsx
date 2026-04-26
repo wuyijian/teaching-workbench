@@ -1,14 +1,16 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Plus, ChevronLeft, Trash2, RotateCcw, Copy, Check,
   FileAudio, Loader2, CheckCircle2, AlertCircle,
   User, BookOpen, Zap, Cpu, Upload, X, Sparkles,
   Archive, ArchiveRestore, FileDown, ChevronRight,
+  Mic, Pause, Play, Square,
 } from 'lucide-react';
 import type { Task, TranscribeEngine } from '../types';
 import { normalizeStudentKey } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
+import { useMediaRecorder } from '../hooks/useMediaRecorder';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Prompt 模板
@@ -81,6 +83,12 @@ function formatSeg(seconds: number) {
   return `[${m}:${s}]`;
 }
 
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
 const STATUS_META: Record<Task['status'], { label: string; dot: string }> = {
   queued:       { label: '排队中', dot: '#6e7681' },
   uploading:    { label: '上传中', dot: '#d29922' },
@@ -136,16 +144,39 @@ function CreateForm({
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
+  const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
+  const [recordedDuration, setRecordedDuration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isElectron = !!window.electronAPI;
+  const recorder = useMediaRecorder();
 
   const isCustom = presetIdx === PROMPT_PRESETS.length - 1;
   const finalPrompt = isCustom ? customPrompt : PROMPT_PRESETS[presetIdx].value;
 
   const handleFile = useCallback((f: File) => setFile(f), []);
 
-  usePasteFile(handleFile);
+  // When recording finishes, auto-populate the file field
+  useEffect(() => {
+    if (recorder.audioFile) {
+      setRecordedDuration(recorder.duration);
+      handleFile(recorder.audioFile);
+    }
+  }, [recorder.audioFile, recorder.duration, handleFile]);
+
+  const switchToUpload = useCallback(() => {
+    recorder.reset();
+    setFile(null);
+    setRecordMode('upload');
+  }, [recorder]);
+
+  const switchToRecord = useCallback(() => {
+    recorder.reset();
+    setFile(null);
+    setRecordMode('record');
+  }, [recorder]);
+
+  usePasteFile(handleFile, recordMode === 'upload');
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
@@ -280,20 +311,66 @@ function CreateForm({
           </div>
         </div>
 
-        {/* File upload */}
+        {/* Audio source */}
         <div>
           <label className="text-xs text-slate-400 font-medium mb-1.5 block">
-            音频文件 <span className="text-red-400">*</span>
+            音频来源 <span className="text-red-400">*</span>
           </label>
+
+          {/* Mode tabs */}
+          <div className="flex gap-0.5 p-0.5 rounded-lg mb-3"
+            style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              onClick={switchToUpload}
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+              style={recordMode === 'upload'
+                ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+                : { color: 'var(--text-3)', border: '1px solid transparent' }}
+            >
+              <Upload size={11} /> 上传文件
+            </button>
+            <button
+              type="button"
+              onClick={switchToRecord}
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+              style={recordMode === 'record'
+                ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+                : { color: 'var(--text-3)', border: '1px solid transparent' }}
+            >
+              <Mic size={11} /> 现场录音
+            </button>
+          </div>
+
+          {/* File selected (shared for upload and record modes) */}
           {file ? (
-            <div className="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2.5 border border-slate-700">
-              <FileAudio size={16} className="text-indigo-400 shrink-0" />
-              <span className="text-sm text-slate-200 truncate flex-1">{file.name}</span>
-              <button onClick={() => setFile(null)} className="text-slate-500 hover:text-slate-300">
+            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border"
+              style={{ background: 'var(--bg-s2)', borderColor: 'var(--border)' }}>
+              {recordMode === 'record'
+                ? <Mic size={16} className="text-red-400 shrink-0" />
+                : <FileAudio size={16} className="text-indigo-400 shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm truncate" style={{ color: 'var(--text-1)' }}>{file.name}</p>
+                <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                  {recordMode === 'record'
+                    ? `${formatDuration(recordedDuration)} · 点击「创建任务」开始转写`
+                    : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setFile(null); recorder.reset(); }}
+                className="transition-colors"
+                style={{ color: 'var(--text-3)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+              >
                 <X size={14} />
               </button>
             </div>
-          ) : (
+
+          ) : recordMode === 'upload' ? (
+            /* ── 上传文件 ── */
             <>
               <div
                 className={`relative rounded-xl border-2 border-dashed transition-all cursor-pointer ${
@@ -304,12 +381,11 @@ function CreateForm({
                 onDrop={handleDrop}
                 onClick={openFilePicker}
               >
-              <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
-                <Upload size={20} className="text-slate-500" />
-                <p className="text-xs text-slate-400">拖拽 · 点击 · 或 ⌘V 粘贴音频文件</p>
-                <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
-              </div>
-                {/* Web 环境保留隐藏 input；Electron 由 openFilePicker 调原生 dialog */}
+                <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
+                  <Upload size={20} className="text-slate-500" />
+                  <p className="text-xs text-slate-400">拖拽 · 点击 · 或 ⌘V 粘贴音频文件</p>
+                  <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+                </div>
                 {!isElectron && (
                   <input
                     ref={inputRef}
@@ -324,6 +400,101 @@ function CreateForm({
                 <p className="text-xs text-red-400 mt-1">{filePickError}</p>
               )}
             </>
+
+          ) : (
+            /* ── 现场录音 ── */
+            <div className="rounded-xl border-2 border-dashed flex flex-col items-center py-5 gap-3 transition-all"
+              style={{ borderColor: recorder.state === 'recording' ? 'var(--red)' : 'var(--border)' }}>
+
+              {/* Idle */}
+              {recorder.state === 'idle' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={recorder.start}
+                    className="w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-105"
+                    style={{ background: 'var(--red-dim)', border: '2px solid var(--red)', color: 'var(--red)' }}
+                  >
+                    <Mic size={22} />
+                  </button>
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>点击麦克风开始录音</p>
+                  {!recorder.isSupported && (
+                    <p className="text-xs" style={{ color: 'var(--amber)' }}>当前浏览器不支持录音</p>
+                  )}
+                  {recorder.error && (
+                    <p className="text-xs text-center px-4" style={{ color: 'var(--red)' }}>{recorder.error}</p>
+                  )}
+                </>
+              )}
+
+              {/* Requesting permission */}
+              {recorder.state === 'requesting' && (
+                <>
+                  <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>请求麦克风权限…</p>
+                </>
+              )}
+
+              {/* Recording / Paused */}
+              {(recorder.state === 'recording' || recorder.state === 'paused') && (
+                <>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full"
+                      style={{
+                        background: recorder.state === 'recording' ? 'var(--red)' : 'var(--amber)',
+                        boxShadow: recorder.state === 'recording' ? '0 0 8px var(--red)' : undefined,
+                        animation: recorder.state === 'recording' ? 'pulse 1.2s ease-in-out infinite' : undefined,
+                      }}
+                    />
+                    <span className="text-xl font-mono font-semibold tabular-nums"
+                      style={{ color: 'var(--text-1)' }}>
+                      {formatDuration(recorder.duration)}
+                    </span>
+                    <span className="text-xs"
+                      style={{ color: recorder.state === 'paused' ? 'var(--amber)' : 'var(--text-3)' }}>
+                      {recorder.state === 'paused' ? '已暂停' : '录音中'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    {recorder.state === 'recording' ? (
+                      <button
+                        type="button"
+                        onClick={recorder.pause}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                        style={{ color: 'var(--text-2)', background: 'var(--bg-s2)', border: '1px solid var(--border)' }}
+                      >
+                        <Pause size={11} /> 暂停
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={recorder.resume}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                        style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}
+                      >
+                        <Play size={11} /> 继续
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={recorder.stop}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                      style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid #5a1e1e' }}
+                    >
+                      <Square size={11} /> 停止
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Done — brief state while useEffect propagates file to form */}
+              {recorder.state === 'done' && (
+                <>
+                  <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>处理录音中…</p>
+                </>
+              )}
+            </div>
           )}
         </div>
 
