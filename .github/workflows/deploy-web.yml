@@ -1,0 +1,168 @@
+# ─────────────────────────────────────────────────────────────────────
+# Web 版自动部署到阿里云
+# 触发：push 到 main / 手动 workflow_dispatch
+# 流程：smoke (tsc + 讯飞 + LLM) → build:web → rsync → reload nginx
+#
+# 必须在仓库 Settings → Secrets and variables → Actions 配置以下 Secrets：
+#   ─ 部署目标 ─
+#     DEPLOY_HOST              例如 yixiaojian.top（或服务器公网 IP）
+#     DEPLOY_USER              通常是 root
+#     DEPLOY_SSH_KEY           私钥全文（ssh-keygen 生成，公钥写入服务器 /root/.ssh/authorized_keys）
+#     DEPLOY_KNOWN_HOSTS       ssh-keyscan -H yixiaojian.top 输出的内容
+#   ─ 构建期注入到前端的环境变量（VITE_ 开头会编译进 bundle，等同于公开常量）─
+#     VITE_SUPABASE_URL
+#     VITE_SUPABASE_ANON_KEY
+#     VITE_XF_APP_ID
+#     VITE_XF_ACCESS_KEY_ID
+#     VITE_XF_ACCESS_KEY_SECRET
+#     VITE_LLM_API_KEY
+#   ─ 可选 ─
+#     VITE_WECHAT_APP_ID       接入微信扫码登录时填
+#     VITE_LLM_MODEL           默认 kimi-k2.5
+# ─────────────────────────────────────────────────────────────────────
+name: Deploy Web to Aliyun
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'deploy/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+    inputs:
+      skip_smoke:
+        description: '跳过 smoke 烟测（应急回滚等场景使用）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false   # 避免并发部署导致目标目录半新半旧
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # ── 部署目标 ──
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: /var/www/teaching-workbench
+
+      # ── 前端构建期变量（VITE_ 会进 bundle）──
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_XF_HOST: /xfyun-api
+      VITE_XF_APP_ID: ${{ secrets.VITE_XF_APP_ID }}
+      VITE_XF_ACCESS_KEY_ID: ${{ secrets.VITE_XF_ACCESS_KEY_ID }}
+      VITE_XF_ACCESS_KEY_SECRET: ${{ secrets.VITE_XF_ACCESS_KEY_SECRET }}
+      VITE_LLM_API_KEY: ${{ secrets.VITE_LLM_API_KEY }}
+      VITE_LLM_BASE_URL: /moonshot-api/v1
+      VITE_LLM_MODEL: ${{ secrets.VITE_LLM_MODEL || 'kimi-k2.5' }}
+      VITE_WECHAT_APP_ID: ${{ secrets.VITE_WECHAT_APP_ID }}
+
+    steps:
+      # 1. 拉代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Node 22 + npm 缓存
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # 3. 安装依赖（CI 模式，严格按 lockfile）
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. 把 Secrets 里的环境变量落到 .env.production，让 vite build 能读到
+      #    （仓库 .gitignore 已忽略 .env*，这只是 CI runner 上的临时文件）
+      - name: Write .env.production
+        run: |
+          cat > .env.production <<EOF
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          VITE_XF_HOST=${VITE_XF_HOST}
+          VITE_XF_APP_ID=${VITE_XF_APP_ID}
+          VITE_XF_ACCESS_KEY_ID=${VITE_XF_ACCESS_KEY_ID}
+          VITE_XF_ACCESS_KEY_SECRET=${VITE_XF_ACCESS_KEY_SECRET}
+          VITE_LLM_API_KEY=${VITE_LLM_API_KEY}
+          VITE_LLM_BASE_URL=${VITE_LLM_BASE_URL}
+          VITE_LLM_MODEL=${VITE_LLM_MODEL}
+          VITE_WECHAT_APP_ID=${VITE_WECHAT_APP_ID}
+          EOF
+
+      # 5. 烟测（可选跳过）：tsc + 讯飞鉴权 + 大模型鉴权 + 流式
+      - name: Smoke test (tsc + xfyun + llm)
+        if: ${{ inputs.skip_smoke != true }}
+        run: npm run smoke
+
+      # 6. 构建产物 → dist/
+      - name: Build web
+        run: npm run build:web
+
+      # 7. 加载 SSH 私钥
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      # 8. 注入 known_hosts，避免首次连接报 "Host key verification failed"
+      - name: Trust host
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          # 优先用 secret 里固化的 known_hosts；没配则现场扫描（弱一些）
+          if [ -n "${{ secrets.DEPLOY_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H -T 10 "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      # 9. 在服务器上备份当前线上目录（出问题可一键回滚）
+      - name: Backup remote
+        run: |
+          STAMP=$(date +%Y%m%d-%H%M%S)
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -e
+            mkdir -p '${DEPLOY_PATH}'
+            if [ -d '${DEPLOY_PATH}' ] && [ \"\$(ls -A '${DEPLOY_PATH}' 2>/dev/null)\" ]; then
+              cp -a '${DEPLOY_PATH}' '${DEPLOY_PATH}.bak.${STAMP}'
+              # 只保留最近 5 份备份
+              ls -1dt '${DEPLOY_PATH}'.bak.* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+            fi
+          "
+
+      # 10. rsync 上传 dist/（增量 + --delete 清理旧文件）
+      - name: Sync dist to server
+        run: |
+          rsync -avz --delete \
+            --exclude='.DS_Store' \
+            -e "ssh -o StrictHostKeyChecking=yes" \
+            ./dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      # 11. 校验 + 重载 Nginx
+      - name: Reload Nginx
+        run: |
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "nginx -t && systemctl reload nginx"
+
+      # 12. 浅探活：抓首页 200，body 含 <div id="root"> 就算稳
+      - name: Health check
+        run: |
+          set -e
+          STATUS=$(curl -fsS -o /tmp/index.html -w '%{http_code}' "https://${DEPLOY_HOST}/?cb=$(date +%s)")
+          echo "HTTP $STATUS"
+          [ "$STATUS" = "200" ] || { echo "首页非 200"; exit 1; }
+          grep -q '<div id="root"' /tmp/index.html || { echo "首页未渲染 SPA 容器"; exit 1; }
+          echo "✓ 部署完成 ─ https://${DEPLOY_HOST}"
