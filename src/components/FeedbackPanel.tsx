@@ -7,14 +7,14 @@ import {
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT } from './TaskPanel';
+import { resolveApiBase } from '../config/urls';
+import { hasPlatformLlm } from '../config/platformApi';
 
 // Resolve the effective prompt: settings override → built-in default
 export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
   const p = settings.feedbackPrompt?.trim();
   return p && p.length > 0 ? p : FEEDBACK_PROMPT;
 }
-import { resolveApiBase } from '../config/urls';
-import { hasPlatformLlm } from '../config/platformApi';
 
 interface FeedbackMessage {
   role: 'user' | 'assistant';
@@ -52,7 +52,7 @@ async function streamAI(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`网络请求失败（${url}）：${msg}。请检查设置里的 API 地址是否正确，以及网络是否可用。`);
+    throw new Error(`网络请求失败（${url}）：${msg}。请检查 VITE_LLM_BASE_URL 反代与网络。`);
   }
   if (!resp.ok) throw new Error(`API 错误 ${resp.status}: ${await resp.text()}`);
   const reader = resp.body!.getReader();

@@ -606,7 +606,7 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={hasApiKey ? '输入指令，按 Enter 发送，Shift+Enter 换行…' : '请先配置 API Key'}
+            placeholder={hasApiKey ? '输入指令，按 Enter 发送，Shift+Enter 换行…' : '未配置 VITE_LLM_API_KEY，无法使用'}
             disabled={!hasApiKey}
             rows={1}
             className="flex-1 resize-none text-sm leading-relaxed bg-transparent outline-none"

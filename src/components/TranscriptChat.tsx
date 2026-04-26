@@ -38,7 +38,7 @@ async function streamChat(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`网络请求失败（${url}）：${msg}。请检查设置里的 API 地址是否正确，以及网络是否可用。`);
+    throw new Error(`网络请求失败（${url}）：${msg}。请检查 VITE_LLM_BASE_URL 与网络。`);
   }
   if (!resp.ok) throw new Error(`API 错误 ${resp.status}`);
   const reader = resp.body!.getReader();

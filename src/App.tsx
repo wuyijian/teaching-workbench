@@ -7,12 +7,12 @@ import { RightPanel } from './components/RightPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { StudentArchive } from './components/StudentArchive';
 import { AgentChat } from './components/AgentChat';
-
-type AppMode = 'workbench' | 'archive' | 'agent';
 import { useTaskManager } from './hooks/useTaskManager';
 import { isElectronTarget, isRunningInElectron } from './config/app';
 import { mergePlatformApiSettings, hasPlatformLlm, hasPlatformXf } from './config/platformApi';
 import type { Settings } from './types';
+
+type AppMode = 'workbench' | 'archive' | 'agent';
 
 function loadUserPrefsFromStorage(): { language: string; feedbackPrompt?: string } {
   try {

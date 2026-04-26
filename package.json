@@ -34,13 +34,7 @@
     "mac": {
       "category": "public.app-category.education",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
+        { "target": "dmg", "arch": ["arm64", "x64"] }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "darkModeSupport": true,
@@ -52,30 +46,14 @@
     "dmg": {
       "title": "语文教学工作台",
       "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
       ],
-      "window": {
-        "width": 540,
-        "height": 380
-      }
+      "window": { "width": 540, "height": 380 }
     },
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "nsis", "arch": ["x64"] }
       ],
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
