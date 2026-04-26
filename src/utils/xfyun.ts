@@ -1,9 +1,12 @@
 import type { TranscriptSegment } from '../types';
 
-// ────────────────────────────────────────────
-// 签名生成（HMAC-SHA1 + Base64）
-// 算法：对参数按 key 自然排序 → URLEncode value → 拼接 → HMAC-SHA1
-// ────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// 讯飞企业版「办公录音转写」（office-api-ist-dx.iflyaisol.com）签名
+//   字段：appId / accessKeyId / accessKeySecret / dateTime / signatureRandom
+//   算法：参数按 key 字典序排序 → 对每个 value 做 URLEncode →
+//         "k1=v1&k2=v2..." 拼接 → HMAC-SHA1(签名串, accessKeySecret) → Base64
+//   签名以 HTTP Header `signature` 提交，body 为音频原始流
+// ────────────────────────────────────────────────────────────────────────────
 
 async function hmacSha1Base64(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -30,10 +33,7 @@ export async function buildSignature(
   return hmacSha1Base64(secret, base);
 }
 
-// ────────────────────────────────────────────
-// 时间格式：yyyy-MM-dd'T'HH:mm:ss±HHmm
-// ────────────────────────────────────────────
-
+/** ISO 8601 with timezone：yyyy-MM-dd'T'HH:mm:ss±HHmm */
 export function getDateTime(): string {
   const now = new Date();
   const p = (n: number) => n.toString().padStart(2, '0');
@@ -50,18 +50,14 @@ export function getDateTime(): string {
   return `${y}-${mo}-${d}T${h}:${mi}:${s}${sign}${oh}${om}`;
 }
 
-// ────────────────────────────────────────────
-// 16 位随机字符串
-// ────────────────────────────────────────────
-
 export function randomStr(len = 16): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
-// ────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // 结果解析：lattice → TranscriptSegment[]
-// ────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 interface CW { w: string; wp: string }
 interface WS { cw: CW[] }

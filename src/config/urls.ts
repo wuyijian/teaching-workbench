@@ -3,7 +3,8 @@ const trim = (s: string) => s.replace(/\/$/, '');
 const isElectron = import.meta.env.VITE_ELECTRON === '1';
 
 /**
- * 讯飞转写 API 基路径。
+ * 讯飞企业版「办公录音转写」API 基路径。
+ * 讯飞企业 host：https://office-api-ist-dx.iflyaisol.com
  * - Electron：直连讯飞公网（webSecurity:false + session 补 Origin 头）
  * - 网页：走同域反代 /xfyun-api（需在 Nginx/Vercel 配置反代）
  */

@@ -113,11 +113,14 @@ function uid() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** 讯飞企业版（office-api-ist-dx）language：autodialect / autominor */
 function mapLanguage(lang: string) {
   return lang.startsWith('en') ? 'autominor' : 'autodialect';
 }
 
-// ── iFlytek ──────────────────────────────────────────────────────────────────
+// ── 讯飞企业版「办公录音转写」office-api-ist-dx.iflyaisol.com/v2 ──────────────
+//   鉴权：accessKeyId + dateTime + signatureRandom +
+//        signature = HMAC-SHA1(参数排序串, accessKeySecret) → Base64，放 Header
 async function transcribeXfyun(
   file: File,
   _settings: Settings,
@@ -130,12 +133,13 @@ async function transcribeXfyun(
     throw new Error('转写服务未在服务端配置，请联系管理员');
   }
 
-  // 1. 上传
+  // ── 1. 上传 ──
+  const dateTimeUp = getDateTime();
   const signatureRandom = randomStr(16);
   const uploadParams: Record<string, string> = {
     appId: xfAppId,
     accessKeyId: xfAccessKeyId,
-    dateTime: getDateTime(),
+    dateTime: dateTimeUp,
     signatureRandom,
     fileSize: String(file.size),
     fileName: file.name,
@@ -143,20 +147,25 @@ async function transcribeXfyun(
     durationCheckDisable: 'true',
     pd: 'edu',
   };
-  const uploadSig = await buildSignature(uploadParams, xfAccessKeySecret);
-  const query = Object.entries(uploadParams).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  const signatureUp = await buildSignature(uploadParams, xfAccessKeySecret);
+  const query = Object.entries(uploadParams)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
 
   onProgress(10);
   const upResp = await fetch(`${xfyunProxyBase}/v2/upload?${query}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream', signature: uploadSig },
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      signature: signatureUp,
+    },
     body: file,
   });
   const upData = await upResp.json();
   if (upData.code !== '000000') throw new Error(`讯飞上传失败：${upData.descInfo ?? upData.code}`);
   const orderId = upData.content.orderId as string;
 
-  // 2. 轮询（最长等待 3 小时，间隔自适应）
+  // ── 2. 轮询（最长 3 小时，间隔自适应）──
   onProgress(20);
   const pollStart = Date.now();
   const MAX_WAIT_MS = 3 * 60 * 60 * 1000;
@@ -171,18 +180,24 @@ async function transcribeXfyun(
     await new Promise(r => setTimeout(r, interval));
     if (shouldStop()) throw new Error('已取消');
 
+    const dateTimePoll = getDateTime();
     const pollParams: Record<string, string> = {
       accessKeyId: xfAccessKeyId,
-      dateTime: getDateTime(),
+      dateTime: dateTimePoll,
       signatureRandom,
       orderId,
       resultType: 'transfer',
     };
-    const pollSig = await buildSignature(pollParams, xfAccessKeySecret);
-    const pq = Object.entries(pollParams).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    const signaturePoll = await buildSignature(pollParams, xfAccessKeySecret);
+    const pq = Object.entries(pollParams)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
     const pResp = await fetch(`${xfyunProxyBase}/v2/getResult?${pq}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', signature: pollSig },
+      headers: {
+        'Content-Type': 'application/json',
+        signature: signaturePoll,
+      },
       body: '{}',
     });
     const pData = await pResp.json();
