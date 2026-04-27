@@ -64,7 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(async (email: string, password: string): Promise<string | { needsConfirm: true } | null> => {
     if (!supabase) return null;
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    // 邮件确认后用户回跳的目的页：当前域 + /app（直接进工作台，跳过营销页）
+    // 不传这个会回落到 Supabase Dashboard 里 Site URL，dev/prod 之间易踩坑
+    const emailRedirectTo =
+      typeof window !== 'undefined' ? `${window.location.origin}/app` : undefined;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    });
     if (error) return localizeError(error.message);
     const needsConfirm = !data.session && (data.user?.identities?.length ?? 0) > 0;
     return needsConfirm ? { needsConfirm: true } : null;
