@@ -18,8 +18,8 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 
 const PLAN_DEFAULTS = {
-  pro:   { quota: 3000 }, // 50h
-  elite: { quota: 3600 }, // 60h
+  pro:   { quota: 3000  }, // 50h
+  elite: { quota: 30000 }, // 500h
 };
 
 function arg(name, fallback) {
