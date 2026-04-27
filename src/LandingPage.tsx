@@ -131,16 +131,34 @@ export function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  // 处理来自工作台的跳转参数（旧链接兼容）
+  // 处理来自工作台的跳转参数（旧链接兼容）：?register=1 直接弹注册框，注册成功后进 /app
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('register') === '1') {
+      try { sessionStorage.setItem('post-login-redirect', '/app'); } catch { /* */ }
       openAuthModal('register');
       window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     }
   }, [openAuthModal]);
 
-  const goToApp = () => { window.location.href = '/app'; };
+  // 进入工作台（探索版）：必须先登录
+  // 未登录 → 设置回跳标记 + 弹注册框；登录成功后 AuthContext 会自动跳 /app
+  // 已登录 → 直接整页跳到 /app
+  const goToApp = () => {
+    if (authEnabled && !user) {
+      try { sessionStorage.setItem('post-login-redirect', '/app'); } catch { /* */ }
+      openAuthModal('register');
+      return;
+    }
+    window.location.href = '/app';
+  };
+
+  // 落地页内统一弹起登录/注册框：从这里发起的认证都视为"想用产品"，
+  // 成功后由 AuthContext 自动跳 /app
+  const beginAuth = (mode: 'login' | 'register') => {
+    try { sessionStorage.setItem('post-login-redirect', '/app'); } catch { /* */ }
+    openAuthModal(mode);
+  };
 
   return (
     <div style={{ fontFamily: 'system-ui, -apple-system, "PingFang SC", "Helvetica Neue", sans-serif', background: C.bg, color: C.text1, lineHeight: 1.6 }}>
@@ -190,10 +208,10 @@ export function LandingPage() {
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button onClick={() => openAuthModal('login')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+                <button onClick={() => beginAuth('login')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 500, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
                   <LogIn size={13} /> 登录
                 </button>
-                <button onClick={() => openAuthModal('register')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
+                <button onClick={() => beginAuth('register')} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
                   <UserPlus size={13} /> 注册
                 </button>
               </div>
@@ -230,10 +248,10 @@ export function LandingPage() {
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 56 }}>
             {authEnabled && !user ? (
               <>
-                <button onClick={() => openAuthModal('register')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 700, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', boxShadow: `0 0 24px ${C.accent}40` }}>
+                <button onClick={() => beginAuth('register')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 700, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none', boxShadow: `0 0 24px ${C.accent}40` }}>
                   <UserPlus size={16} /> 免费注册
                 </button>
-                <button onClick={() => openAuthModal('login')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.borderBright}` }}>
+                <button onClick={() => beginAuth('login')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, padding: '13px 32px', borderRadius: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text1, border: `1px solid ${C.borderBright}` }}>
                   <LogIn size={15} /> 登录
                 </button>
               </>
@@ -416,7 +434,7 @@ export function LandingPage() {
             <button onClick={goToApp} style={{ fontSize: 13, color: C.text3, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>进入工作台</button>
             <a href={BIZ.githubReleases} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: C.text3, textDecoration: 'none' }}>GitHub</a>
             {authEnabled && !user && (
-              <button onClick={() => openAuthModal('register')} style={{ fontSize: 13, color: C.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>注册账号</button>
+              <button onClick={() => beginAuth('register')} style={{ fontSize: 13, color: C.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>注册账号</button>
             )}
           </div>
         </div>

@@ -73,6 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    // 登出后强制回到落地页：避免 main.tsx 的登录守卫立刻又弹一次登录框
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/app')) {
+      window.location.href = '/';
+    }
   }, []);
 
   const openAuthModal = useCallback((mode: AuthModalMode = 'login') => {
@@ -94,7 +98,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <AuthModal
           initialMode={authModalMode}
           onClose={closeAuthModal}
-          onSuccess={closeAuthModal}
+          onSuccess={() => {
+            closeAuthModal();
+            // 登录前如果有挂起的 "想去 /app" 意图（被 LoginGate 或落地页 CTA 设置），现在跳过去
+            try {
+              const redirect = sessionStorage.getItem('post-login-redirect');
+              if (redirect) {
+                sessionStorage.removeItem('post-login-redirect');
+                window.location.href = redirect;
+              }
+            } catch { /* sessionStorage 被禁用时无害 */ }
+          }}
         />
       )}
     </AuthContext.Provider>
