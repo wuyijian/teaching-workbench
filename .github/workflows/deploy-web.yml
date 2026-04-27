@@ -152,10 +152,15 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=yes" \
             ./dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      # 11. 校验 + 重载 Nginx
-      - name: Reload Nginx
+      # 11. 修权限（rsync/scp 上传后目录可能 700，nginx user 读不到）+ 重载 Nginx
+      - name: Fix permissions + reload Nginx
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "nginx -t && systemctl reload nginx"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -e
+            chown -R nginx:nginx '${DEPLOY_PATH}'
+            chmod -R a+rX '${DEPLOY_PATH}'
+            nginx -t && systemctl reload nginx
+          "
 
       # 12. 浅探活：抓首页 200，body 含 <div id="root"> 就算稳
       - name: Health check

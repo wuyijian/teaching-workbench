@@ -49,7 +49,8 @@ else
     scp -r ./dist/* "${USER}@${HOST}:${REMOTE_PATH}/"
 fi
 
-log "重载 Nginx（让 index.html 立即可见）"
-ssh "${USER}@${HOST}" "nginx -t && systemctl reload nginx" || warn "重载失败，请手动登录服务器检查"
+log "修权限 + 重载 Nginx"
+# scp/rsync 上传后目录可能 700（owner=root），nginx user 读不到 → 强制矫正
+ssh "${USER}@${HOST}" "chown -R nginx:nginx '${REMOTE_PATH}' && chmod -R a+rX '${REMOTE_PATH}' && nginx -t && systemctl reload nginx" || warn "重载失败，请手动登录服务器检查"
 
 log "✓ 发版完成 ─ https://${HOST}"
