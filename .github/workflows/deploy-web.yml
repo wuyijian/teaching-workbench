@@ -103,7 +103,22 @@ jobs:
           VITE_WECHAT_APP_ID=${VITE_WECHAT_APP_ID}
           EOF
 
-      # 5. 烟测（可选跳过）：tsc + 讯飞鉴权 + 大模型鉴权 + 流式
+      # 5a. 诊断：打印 Secrets 是否注入（只看长度，不泄露内容）
+      - name: Diagnose env (lengths only)
+        run: |
+          echo "─────────── Secrets 长度自检（0 = 未配置） ───────────"
+          printf 'VITE_SUPABASE_URL          len=%s\n' "${#VITE_SUPABASE_URL}"
+          printf 'VITE_SUPABASE_ANON_KEY     len=%s\n' "${#VITE_SUPABASE_ANON_KEY}"
+          printf 'VITE_XF_APP_ID             len=%s\n' "${#VITE_XF_APP_ID}"
+          printf 'VITE_XF_ACCESS_KEY_ID      len=%s\n' "${#VITE_XF_ACCESS_KEY_ID}"
+          printf 'VITE_XF_ACCESS_KEY_SECRET  len=%s\n' "${#VITE_XF_ACCESS_KEY_SECRET}"
+          printf 'VITE_LLM_API_KEY           len=%s\n' "${#VITE_LLM_API_KEY}"
+          printf 'VITE_LLM_BASE_URL          val=%s\n' "${VITE_LLM_BASE_URL}"
+          printf 'VITE_LLM_MODEL             val=%s\n' "${VITE_LLM_MODEL}"
+          printf 'VITE_WECHAT_APP_ID         len=%s\n' "${#VITE_WECHAT_APP_ID}"
+          echo "─────────────────────────────────────────────────────"
+
+      # 5b. 烟测（可选跳过）：tsc + 讯飞鉴权 + 大模型鉴权 + 流式
       - name: Smoke test (tsc + xfyun + llm)
         if: ${{ inputs.skip_smoke != true }}
         run: npm run smoke
