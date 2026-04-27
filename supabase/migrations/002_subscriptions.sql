@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.user_subscriptions (
   user_id       UUID        NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   plan          TEXT        NOT NULL DEFAULT 'free'
                               CHECK (plan IN ('free','pro','elite')),
-  quota_minutes INTEGER     NOT NULL DEFAULT 180,   -- free: 3h, pro: 1200(20h), elite: 3600(60h)
+  quota_minutes INTEGER     NOT NULL DEFAULT 180,   -- free: 3h, pro: 3000(50h, 见 006), elite: 3600(60h)
   used_minutes  NUMERIC     NOT NULL DEFAULT 0,
   period_start  TIMESTAMPTZ NOT NULL DEFAULT date_trunc('month', NOW() AT TIME ZONE 'Asia/Shanghai'),
   expires_at    TIMESTAMPTZ,                         -- 付费到期时间（null = 永久免费）

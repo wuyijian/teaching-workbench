@@ -18,7 +18,7 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 
 const PLAN_DEFAULTS = {
-  pro:   { quota: 1200 }, // 20h
+  pro:   { quota: 3000 }, // 50h
   elite: { quota: 3600 }, // 60h
 };
 

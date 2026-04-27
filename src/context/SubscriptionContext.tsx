@@ -12,7 +12,7 @@ export type SubscriptionPlan = 'free' | 'pro' | 'elite';
 
 export const PLAN_CONFIG: Record<SubscriptionPlan, { label: string; quotaMinutes: number }> = {
   free:  { label: '探索版', quotaMinutes: 180  },   // 3 小时
-  pro:   { label: '专业版', quotaMinutes: 1200 },   // 20 小时
+  pro:   { label: '专业版', quotaMinutes: 3000 },   // 50 小时
   elite: { label: '机构版', quotaMinutes: 3600 },   // 60 小时
 };
 

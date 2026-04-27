@@ -41,7 +41,7 @@ const PLANS = [
     highlight: true,
     badge: '最受欢迎',
     features: [
-      '每月 20 小时转写配额',
+      '每月 50 小时转写配额',
       '无限 AI 反馈',
       '无限学生档案',
       '完整 Agent 模式',
