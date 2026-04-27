@@ -29,7 +29,16 @@ function loadEnv(file) {
 }
 const mask = s => !s ? '(empty)' : s.length <= 8 ? s : s.slice(0, 4) + '…' + s.slice(-4);
 
-const env = loadEnv(path.join(root, '.env'));
+// 优先级：process.env(仅 VITE_*) > .env > .env.production
+// CI 把 Secrets 注入 process.env；本地 dev 用 .env 文件
+const fromProc = Object.fromEntries(
+  Object.entries(process.env).filter(([k, v]) => k.startsWith('VITE_') && v)
+);
+const env = {
+  ...loadEnv(path.join(root, '.env.production')),
+  ...loadEnv(path.join(root, '.env')),
+  ...fromProc,
+};
 const appId        = env.VITE_XF_APP_ID;
 const accessKeyId  = env.VITE_XF_ACCESS_KEY_ID;
 const accessKeySec = env.VITE_XF_ACCESS_KEY_SECRET;

@@ -58,7 +58,16 @@ function loadEnv(file) {
   return out;
 }
 
-const env = loadEnv(path.join(root, '.env'));
+// 优先级：process.env(仅 VITE_*) > .env > .env.production
+// CI（GitHub Actions）把 Secrets 通过 env: 块注入 process.env；本地 dev 用 .env 文件
+const fromProc = Object.fromEntries(
+  Object.entries(process.env).filter(([k, v]) => k.startsWith('VITE_') && v)
+);
+const env = {
+  ...loadEnv(path.join(root, '.env.production')),
+  ...loadEnv(path.join(root, '.env')),
+  ...fromProc,
+};
 const results = [];
 
 // ── 1) TypeScript 编译 ──
