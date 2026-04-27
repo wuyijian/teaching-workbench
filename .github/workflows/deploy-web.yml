@@ -134,16 +134,17 @@ jobs:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       # 8. 注入 known_hosts，避免首次连接报 "Host key verification failed"
+      #    始终现场 ssh-keyscan（TOFU），避免 secret 里的 known_hosts 过期 →
+      #    "REMOTE HOST IDENTIFICATION HAS CHANGED" 死锁。
+      #    适合"自家服务器自家 CI"的场景；多租户/高安全场景请改用固定 secret。
       - name: Trust host
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          # 优先用 secret 里固化的 known_hosts；没配则现场扫描（弱一些）
-          if [ -n "${{ secrets.DEPLOY_KNOWN_HOSTS }}" ]; then
-            printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
-          else
-            ssh-keyscan -H -T 10 "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
-          fi
+          # 删掉可能存在的旧条目（actions/runner image 偶尔会预置 host）
+          ssh-keygen -R "${DEPLOY_HOST}" 2>/dev/null || true
+          # 现场扫描当前服务器的 host key
+          ssh-keyscan -H -T 10 "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       # 9. 在服务器上备份当前线上目录（出问题可一键回滚）
