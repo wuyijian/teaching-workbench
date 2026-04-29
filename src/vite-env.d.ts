@@ -40,6 +40,13 @@ interface ElectronAPI {
   versions: { electron: string; node: string }
   /** 调起系统原生文件选择对话框 */
   openFileDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>
+  /**
+   * 自动通过微信 PC 版发消息给指定联系人（仅 Windows）
+   * 返回 { ok: true } 或 { ok: false; reason: string; message?: string }
+   */
+  sendWechat: (contactName: string, message: string) => Promise<
+    { ok: true } | { ok: false; reason: 'no_wechat_running' | 'not_windows' | 'error'; message?: string }
+  >
 }
 
 interface Window {

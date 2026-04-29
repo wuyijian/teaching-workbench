@@ -6,10 +6,12 @@ import {
   User, FileAudio, Sparkles, BookOpen, Clock,
   ChevronRight, ChevronDown, CheckCircle2,
   MessageSquare, Calendar, Copy, Check,
-  TrendingUp, Layers,
+  TrendingUp, Layers, MessageCircle,
 } from 'lucide-react';
 import type { Task } from '../types';
 import { normalizeStudentKey } from '../utils/student';
+import { WechatSendModal } from './WechatSendModal';
+import { formatParentMessage } from '../utils/wechat';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -132,6 +134,7 @@ function StudentList({
 function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [wechatOpen, setWechatOpen] = useState(false);
 
   const hasFeedback = !!task.aiSummary;
   const hasTranscript = task.segments.length > 0;
@@ -225,12 +228,20 @@ function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) 
                   <Sparkles size={13} style={{ color: 'var(--accent)' }} />
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 0.5 }}>AI 课堂反馈</span>
                 </div>
-                <button
-                  onClick={copyFeedback}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-                >
-                  {copied ? <><Check size={10} style={{ color: 'var(--green)' }} /> 已复制</> : <><Copy size={10} /> 复制</>}
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={copyFeedback}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+                  >
+                    {copied ? <><Check size={10} style={{ color: 'var(--green)' }} /> 已复制</> : <><Copy size={10} /> 复制</>}
+                  </button>
+                  <button
+                    onClick={() => setWechatOpen(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg-s3)', color: '#07C160', border: '1px solid var(--border)' }}
+                  >
+                    <MessageCircle size={10} /> 发给家长
+                  </button>
+                </div>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.75, whiteSpace: 'pre-wrap', padding: '12px 14px', borderRadius: 8, background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
                 {task.aiSummary}
@@ -263,6 +274,20 @@ function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) 
             </div>
           )}
         </div>
+      )}
+
+      {/* 发给家长弹窗 */}
+      {wechatOpen && task.aiSummary && (
+        <WechatSendModal
+          studentName={task.studentName}
+          message={formatParentMessage({
+            studentName: task.studentName,
+            topic: task.topic,
+            feedback: task.aiSummary,
+            date: new Date(task.createdAt),
+          })}
+          onClose={() => setWechatOpen(false)}
+        />
       )}
     </div>
   );

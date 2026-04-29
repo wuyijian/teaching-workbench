@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, FileText, Copy, Check, Download, BookmarkCheck,
   RefreshCw, Send, Square, ChevronDown, Bot, User,
-  AlertCircle, Loader2, ClipboardList, ChevronUp,
+  AlertCircle, Loader2, ClipboardList, ChevronUp, MessageCircle,
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -10,6 +10,8 @@ import { FEEDBACK_PROMPT } from './TaskPanel';
 import { resolveApiBase } from '../config/urls';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
+import { WechatSendModal } from './WechatSendModal';
+import { formatParentMessage } from '../utils/wechat';
 
 // Resolve the effective prompt: settings override → built-in default
 export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
@@ -201,6 +203,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [input, setInput] = useState('');
   const [notes, setNotes] = useState('');
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [wechatOpen, setWechatOpen] = useState(false);
 
   // 每个任务有独立的 abort controller，互不影响
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -556,6 +559,13 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   {saved ? <BookmarkCheck size={10} /> : <Download size={10} />}
                   {saved ? '已保存' : '保存'}
                 </button>
+                <button onClick={() => setWechatOpen(true)} disabled={isGenerating}
+                  style={{ ...btnStyle(false), color: '#07C160' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
+                  <MessageCircle size={10} />
+                  发给家长
+                </button>
               </div>
             </div>
 
@@ -616,6 +626,19 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             )}
           </div>
         </div>
+      )}
+
+      {/* 发给家长弹窗 */}
+      {wechatOpen && selectedTask && (
+        <WechatSendModal
+          studentName={selectedTask.studentName}
+          message={formatParentMessage({
+            studentName: selectedTask.studentName,
+            topic: selectedTask.topic,
+            feedback,
+          })}
+          onClose={() => setWechatOpen(false)}
+        />
       )}
     </div>
   );

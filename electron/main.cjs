@@ -157,6 +157,115 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ─── 微信自动发送（仅 Windows，通过 PowerShell + WScript.Shell.SendKeys） ────
+
+/**
+ * 生成用于控制微信 Windows 客户端的 PowerShell 脚本。
+ * 流程：激活微信窗口 → Ctrl+F 打开搜索 → 输入联系人名 → 回车进入对话 → 粘贴消息 → 回车发送。
+ * 需要微信 PC 版已登录并在后台运行。
+ */
+function buildWechatPs1(contactName, message) {
+  // 将消息写入临时文件，避免 SendKeys 转义地狱
+  const tmp = path.join(app.getPath('temp'), 'wechat_msg.txt');
+  // 转义 PowerShell 字符串中的单引号
+  const escapedContact = contactName.replace(/'/g, "''");
+  const escapedTmp = tmp.replace(/'/g, "''");
+  return `
+$ErrorActionPreference = 'Stop'
+
+# 把消息写入临时文件（用 Set-Content 写 UTF8-NoBOM）
+Set-Content -Path '${escapedTmp}' -Value @'
+${message.replace(/'/g, "''")}
+'@ -Encoding utf8NoBOM
+
+# 找到微信主进程
+$proc = Get-Process -Name 'WeChat' -ErrorAction SilentlyContinue
+if (-not $proc) { Write-Error 'WeChat not running'; exit 1 }
+
+# 将微信窗口带到前台
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class W32 {
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+}
+"@
+
+$hwnd = $proc.MainWindowHandle
+[W32]::ShowWindow($hwnd, 9)  # SW_RESTORE
+Start-Sleep -Milliseconds 400
+[W32]::SetForegroundWindow($hwnd)
+Start-Sleep -Milliseconds 600
+
+$shell = New-Object -ComObject 'WScript.Shell'
+
+# Ctrl+F：打开搜索框
+$shell.SendKeys('^f')
+Start-Sleep -Milliseconds 800
+
+# 清空旧内容并输入联系人名
+$shell.SendKeys('^a')
+Start-Sleep -Milliseconds 200
+$shell.SendKeys('${escapedContact}')
+Start-Sleep -Milliseconds 1200
+
+# 回车进入对话
+$shell.SendKeys('{ENTER}')
+Start-Sleep -Milliseconds 1000
+
+# 将消息内容放入剪贴板（用 PowerShell Get-Content 读回）
+Get-Content -Path '${escapedTmp}' -Raw | Set-Clipboard
+Start-Sleep -Milliseconds 400
+
+# 粘贴并发送
+$shell.SendKeys('^v')
+Start-Sleep -Milliseconds 500
+$shell.SendKeys('{ENTER}')
+
+# 清理临时文件
+Remove-Item '${escapedTmp}' -Force -ErrorAction SilentlyContinue
+Write-Output 'ok'
+`;
+}
+
+ipcMain.handle('wechat:send', async (_event, contactName, message) => {
+  if (process.platform !== 'win32') {
+    return { ok: false, reason: 'not_windows', message: '自动发送仅支持 Windows' };
+  }
+  const { execFile } = require('child_process');
+  const os = require('os');
+
+  return new Promise(resolve => {
+    try {
+      const script = buildWechatPs1(contactName, message);
+      const scriptPath = path.join(os.tmpdir(), `wechat_send_${Date.now()}.ps1`);
+      fs.writeFileSync(scriptPath, script, 'utf8');
+
+      execFile(
+        'powershell.exe',
+        ['-NonInteractive', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+        { timeout: 20000 },
+        (err, stdout, stderr) => {
+          fs.unlink(scriptPath, () => {}); // 清理脚本文件
+          if (err) {
+            const msg = stderr?.trim() || err.message;
+            if (msg.includes('WeChat not running')) {
+              resolve({ ok: false, reason: 'no_wechat_running' });
+            } else {
+              resolve({ ok: false, reason: 'error', message: msg });
+            }
+          } else {
+            resolve({ ok: true });
+          }
+        },
+      );
+    } catch (e) {
+      resolve({ ok: false, reason: 'error', message: String(e) });
+    }
+  });
+});
+
 // 原生文件选择对话框，绕过 macOS 对渲染进程 input[type=file] 的限制
 ipcMain.handle('dialog:openAudioFile', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
