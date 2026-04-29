@@ -225,10 +225,11 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   const [archivedStudents, setArchivedStudents] = useState<ArchivedStudentsState>(() => INITIAL_DATA.mergedArchived);
 
   // 队列相关 ref（不触发 re-render，避免竞态）
-  const stopFlags  = useRef(new Map<string, boolean>());
-  const queueRef   = useRef<string[]>([]);          // FIFO 待执行 ID 列表
-  const runningRef = useRef(false);                 // 当前是否有任务在执行
-  const pendingRef = useRef(new Map<string, File>());
+  const stopFlags        = useRef(new Map<string, boolean>());
+  const queueRef         = useRef<string[]>([]);          // FIFO 待执行 ID 列表
+  const runningRef       = useRef(false);                 // 当前是否有任务在执行
+  const runningTaskIdRef = useRef<string | null>(null);   // 当前执行的任务 ID
+  const pendingRef       = useRef(new Map<string, File>());
 
   // 让 drain 始终拿到最新 settings / language / quotaApi，避免闭包旧值
   const settingsRef = useRef(settings);
@@ -260,6 +261,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     const id = queueRef.current.shift()!;
     const file = pendingRef.current.get(id)!;
     runningRef.current = true;
+    runningTaskIdRef.current = id;
 
     const s = settingsRef.current;
     const l = languageRef.current;
@@ -295,8 +297,13 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     } finally {
       pendingRef.current.delete(id);
       stopFlags.current.delete(id);
-      runningRef.current = false;
-      drain(); // 处理下一个
+      // deleteTask 删除正在运行的任务时会提前重置 runningRef（runningTaskIdRef 同步清空）。
+      // 此处只有仍是"当前任务"时才重置，防止 deleteTask 已触发 drain 后再次触发导致并发执行。
+      if (runningTaskIdRef.current === id) {
+        runningRef.current = false;
+        runningTaskIdRef.current = null;
+        drain(); // 处理下一个
+      }
     }
   }, [patch]);
 
@@ -349,8 +356,14 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       }
       return next;
     });
-    // 如果没有任务正在执行，主动触发一次 drain，
-    // 确保删掉排队任务后队列里剩余的任务立即启动
+    // 关键修复：删除的是正在执行的任务时，立即重置运行状态
+    // （不等轮询间隔过期才检测到 shouldStop，最长可能等 12 秒）
+    // runningTaskIdRef 同步清空，防止该任务的 finally 块再次调用 drain 造成并发
+    if (runningTaskIdRef.current === id) {
+      runningRef.current = false;
+      runningTaskIdRef.current = null;
+    }
+    // 现在无论原来是否有任务在跑，都能正确触发 drain
     if (!runningRef.current) drain();
   }, [drain]);
 
