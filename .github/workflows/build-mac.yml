@@ -1,32 +1,40 @@
 # ─────────────────────────────────────────────────────────────────────
-# Mac 桌面端（Electron）Release 构建
-# 触发：手动 workflow_dispatch（避免每次 push 都跑耗时构建）
+# Mac 桌面端（Electron）Release 构建 + 发布
+# 触发：手动 workflow_dispatch
 #
 # 必须在仓库 Settings → Secrets and variables → Actions 配置：
-#   VITE_XF_APP_ID
-#   VITE_XF_ACCESS_KEY_ID
-#   VITE_XF_ACCESS_KEY_SECRET
+#   VITE_XF_APP_ID / VITE_XF_ACCESS_KEY_ID / VITE_XF_ACCESS_KEY_SECRET
 #   VITE_LLM_API_KEY
-#   VITE_LLM_MODEL          （可选，默认 kimi-k2.5）
-#   VITE_SUPABASE_URL        （可选，Electron 端无需 Supabase 也能用）
-#   VITE_SUPABASE_ANON_KEY   （可选）
+#   VITE_LLM_MODEL        （可选，默认 kimi-k2.5）
+#   VITE_SUPABASE_URL     （可选）
+#   VITE_SUPABASE_ANON_KEY（可选）
 #
-# 产物：release/ 目录下的 .dmg（arm64 + x64）
-# 下载：Actions → 对应 run → Artifacts
+# 产物：自动创建 GitHub Release，DMG 作为资产附件可直接分享下载链接
 # ─────────────────────────────────────────────────────────────────────
 name: Build Mac Release
 
 on:
   workflow_dispatch:
     inputs:
-      version_note:
-        description: '版本备注（仅用于 run 标题）'
+      version:
+        description: '版本号，例如 v1.0.3（留空则用 package.json 版本）'
         required: false
         default: ''
+      release_notes:
+        description: '更新说明（支持 Markdown）'
+        required: false
+        default: '- Bug 修复与性能优化'
+      prerelease:
+        description: '是否标记为预发布版'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build-mac:
     runs-on: macos-latest
+    permissions:
+      contents: write   # 允许创建 Release
 
     steps:
       - name: Checkout
@@ -41,14 +49,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve version tag
+        id: version
+        run: |
+          INPUT="${{ github.event.inputs.version }}"
+          if [ -z "$INPUT" ]; then
+            PKG=$(node -p "require('./package.json').version")
+            TAG="v${PKG}"
+          else
+            TAG="${INPUT}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Building release: ${TAG}"
+
       - name: Write .env.production
-        # 把 Secrets 写入 .env.production，Vite build 时自动加载
         env:
           VITE_XF_APP_ID:              ${{ secrets.VITE_XF_APP_ID }}
           VITE_XF_ACCESS_KEY_ID:       ${{ secrets.VITE_XF_ACCESS_KEY_ID }}
           VITE_XF_ACCESS_KEY_SECRET:   ${{ secrets.VITE_XF_ACCESS_KEY_SECRET }}
           VITE_LLM_API_KEY:            ${{ secrets.VITE_LLM_API_KEY }}
-          VITE_LLM_MODEL:              ${{ secrets.VITE_LLM_MODEL || 'kimi-k2.5' }}
+          VITE_LLM_MODEL:              ${{ secrets.VITE_LLM_MODEL }}
           VITE_SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY:      ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
@@ -58,7 +78,7 @@ jobs:
           VITE_XF_ACCESS_KEY_SECRET=${VITE_XF_ACCESS_KEY_SECRET}
           VITE_LLM_API_KEY=${VITE_LLM_API_KEY}
           VITE_LLM_BASE_URL=https://api.moonshot.cn/v1
-          VITE_LLM_MODEL=${VITE_LLM_MODEL}
+          VITE_LLM_MODEL=${VITE_LLM_MODEL:-kimi-k2.5}
           VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
           VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
           EOF
@@ -69,16 +89,33 @@ jobs:
       - name: Package Mac DMG (arm64 + x64)
         run: npx electron-builder --mac --x64 --arm64
         env:
-          # 不做代码签名（未申请 Apple 开发者证书）
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # electron-builder publish 不上传，仅本地打包
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload DMG artifacts
-        uses: actions/upload-artifact@v4
+      - name: List release files
+        run: ls -lh release/*.dmg
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: mac-release-${{ github.run_number }}
-          path: |
-            release/*.dmg
-          retention-days: 30
-          if-no-files-found: error
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: 语文教学工作台 ${{ steps.version.outputs.tag }}
+          body: |
+            ## 下载
+
+            | 芯片 | 文件 |
+            |------|------|
+            | Apple Silicon（M 系列） | `*-arm64.dmg` |
+            | Intel | `*-x64.dmg` |
+
+            > **安装提示**：首次打开如遇「无法验证开发者」，前往系统「隐私与安全性」→「仍要打开」。
+
+            ## 更新说明
+
+            ${{ github.event.inputs.release_notes }}
+
+            ---
+            构建：`${{ github.sha }}`
+          files: release/*.dmg
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          make_latest: true
