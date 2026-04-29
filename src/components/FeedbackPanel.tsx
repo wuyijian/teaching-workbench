@@ -33,6 +33,19 @@ interface Props {
 }
 
 // ── 流式调用 AI ───────────────────────────────────────────────────────────────
+/** 解析一行 SSE 数据，返回 content chunk 或 null */
+function parseSseLine(line: string): string | null {
+  if (!line.startsWith('data: ')) return null;
+  const data = line.slice(6).trim();
+  if (data === '[DONE]') return null;
+  try {
+    const d = JSON.parse(data);
+    return d.choices?.[0]?.delta?.content ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function streamAI(
   messages: { role: string; content: string }[],
   settings: Settings,
@@ -58,17 +71,40 @@ async function streamAI(
     throw new Error(`网络请求失败（${url}）：${msg}。请检查 VITE_LLM_BASE_URL 反代与网络。`);
   }
   if (!resp.ok) throw new Error(`API 错误 ${resp.status}: ${await resp.text()}`);
-  const reader = resp.body!.getReader();
+
+  // Safari 14 兼容：resp.body 可能为 null（Safari 14.0），或不支持 TextDecoder { stream: true }
+  // 降级方案：读取完整响应文本后按行解析 SSE
+  if (!resp.body) {
+    const text = await resp.text();
+    for (const line of text.split('\n')) {
+      const chunk = parseSseLine(line);
+      if (chunk) onChunk(chunk);
+    }
+    return;
+  }
+
+  // 标准流式读取（Chrome / Firefox / Safari 14.1+）
+  const reader = resp.body.getReader();
+  // TextDecoder { stream: true } 在 Safari 14.0 不支持，改为手动拼接跨 chunk 行
   const dec = new TextDecoder();
+  let buf = '';
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    for (const line of dec.decode(value, { stream: true }).split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') return;
-      try { const d = JSON.parse(data); const c = d.choices?.[0]?.delta?.content; if (c) onChunk(c); } catch { /* skip */ }
+    // decode 不加 { stream: true }，对多字节边界用 buf 拼接处理
+    buf += dec.decode(value);
+    const lines = buf.split('\n');
+    // 最后一段可能不完整，留到下一次拼接
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const chunk = parseSseLine(line);
+      if (chunk) onChunk(chunk);
     }
+  }
+  // 处理 buf 里残余的最后一行
+  if (buf) {
+    const chunk = parseSseLine(buf);
+    if (chunk) onChunk(chunk);
   }
 }
 
