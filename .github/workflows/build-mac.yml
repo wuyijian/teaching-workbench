@@ -14,21 +14,15 @@
 name: Build Mac Release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'          # v1.0.3、v2.0.0 等格式触发
+  workflow_dispatch:      # 保留手动触发（测试用）
     inputs:
-      version:
-        description: '版本号，例如 v1.0.3（留空则用 package.json 版本）'
-        required: false
-        default: ''
       release_notes:
-        description: '更新说明（支持 Markdown）'
+        description: '更新说明（手动触发时用）'
         required: false
         default: '- Bug 修复与性能优化'
-      prerelease:
-        description: '是否标记为预发布版'
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   build-mac:
@@ -52,12 +46,12 @@ jobs:
       - name: Resolve version tag
         id: version
         run: |
-          INPUT="${{ github.event.inputs.version }}"
-          if [ -z "$INPUT" ]; then
-            PKG=$(node -p "require('./package.json').version")
-            TAG="v${PKG}"
+          # tag push 时用 git tag；手动触发时读 package.json
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
           else
-            TAG="${INPUT}"
+            PKG=$(node -p "require('./package.json').version")
+            TAG="v${PKG}-manual"
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "Building release: ${TAG}"
@@ -95,6 +89,23 @@ jobs:
       - name: List release files
         run: ls -lh release/*.dmg
 
+      - name: Read changelog for this tag
+        id: changelog
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          # 尝试从 CHANGELOG.md 里提取当前版本的条目；找不到就用默认文案
+          if [ -f CHANGELOG.md ]; then
+            # 提取两个版本标题之间的内容
+            NOTES=$(awk "/^## \[?${TAG#v}\]?/{flag=1;next} /^## /{flag=0} flag" CHANGELOG.md)
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES="${{ github.event.inputs.release_notes || '- Bug 修复与性能优化' }}"
+          fi
+          # 多行输出用 heredoc 写入 GITHUB_OUTPUT
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES"    >> $GITHUB_OUTPUT
+          echo "EOF"        >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -108,14 +119,13 @@ jobs:
             | Apple Silicon（M 系列） | `*-arm64.dmg` |
             | Intel | `*-x64.dmg` |
 
-            > **安装提示**：首次打开如遇「无法验证开发者」，前往系统「隐私与安全性」→「仍要打开」。
+            > **安装提示**：首次打开如遇「无法验证开发者」，前往「系统设置 → 隐私与安全性」→「仍要打开」。
 
             ## 更新说明
 
-            ${{ github.event.inputs.release_notes }}
+            ${{ steps.changelog.outputs.notes }}
 
             ---
-            构建：`${{ github.sha }}`
+            构建提交：`${{ github.sha }}`
           files: release/*.dmg
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           make_latest: true
