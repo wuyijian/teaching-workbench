@@ -105,7 +105,14 @@ function migrateTasksAndArchived(rawTasks: Task[]): { tasks: Task[]; mergedArchi
   return { tasks, mergedArchived: merged };
 }
 
-const INITIAL_DATA = migrateTasksAndArchived(loadTasks());
+let INITIAL_DATA: ReturnType<typeof migrateTasksAndArchived>;
+try {
+  INITIAL_DATA = migrateTasksAndArchived(loadTasks());
+} catch {
+  // localStorage 数据损坏时安全降级：清除并从空状态启动
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
+  INITIAL_DATA = { tasks: [], mergedArchived: {} };
+}
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
 import { xfyunProxyBase } from '../config/urls';
 

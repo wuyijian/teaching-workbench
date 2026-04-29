@@ -7,6 +7,7 @@ import { WechatCallbackPage } from './pages/WechatCallbackPage.tsx'
 import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { SubscriptionProvider } from './context/SubscriptionContext.tsx'
 import { isElectronTarget } from './config/app.ts'
+import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
 
 // 客户端路由（无需 react-router）：
 //   /                       → 落地页
@@ -80,10 +81,12 @@ function LoginGate() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <SubscriptionProvider>
-        <Root />
-      </SubscriptionProvider>
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <SubscriptionProvider>
+          <Root />
+        </SubscriptionProvider>
+      </AuthProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 )
