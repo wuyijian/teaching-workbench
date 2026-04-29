@@ -15,39 +15,19 @@ import type { Settings } from './types';
 
 type AppMode = 'workbench' | 'archive' | 'agent';
 
-interface UserPrefs {
-  language: string;
-  feedbackPrompt?: string;
-  /** 用户手动填写的 LLM 配置，env var 有值时 env var 优先 */
-  userApiKey?: string;
-  userApiBaseUrl?: string;
-  userModel?: string;
-}
-
-function loadUserPrefsFromStorage(): UserPrefs {
+function loadUserPrefsFromStorage(): { language: string; feedbackPrompt?: string } {
   try {
     const raw = localStorage.getItem('tw-settings');
     if (!raw) return { language: 'zh-CN' };
-    const p = JSON.parse(raw) as UserPrefs & { language?: string };
-    return {
-      language: p.language || 'zh-CN',
-      feedbackPrompt: p.feedbackPrompt,
-      userApiKey: p.userApiKey,
-      userApiBaseUrl: p.userApiBaseUrl,
-      userModel: p.userModel,
-    };
+    const p = JSON.parse(raw) as { language?: string; feedbackPrompt?: string };
+    return { language: p.language || 'zh-CN', feedbackPrompt: p.feedbackPrompt };
   } catch {
     return { language: 'zh-CN' };
   }
 }
 
 function loadSettings(): Settings {
-  const prefs = loadUserPrefsFromStorage();
-  return mergePlatformApiSettings(prefs, {
-    apiKey: prefs.userApiKey,
-    apiBaseUrl: prefs.userApiBaseUrl,
-    model: prefs.userModel,
-  });
+  return mergePlatformApiSettings(loadUserPrefsFromStorage());
 }
 
 export default function App() {
@@ -74,19 +54,16 @@ export default function App() {
 
   const needsConfig = !hasPlatformLlm() || !hasPlatformXf();
 
-  const handleSaveSettings = useCallback((s: Settings & { userApiKey?: string; userApiBaseUrl?: string; userModel?: string }) => {
-    const next = mergePlatformApiSettings(
-      { language: s.language, feedbackPrompt: s.feedbackPrompt },
-      { apiKey: s.userApiKey, apiBaseUrl: s.userApiBaseUrl, model: s.userModel },
-    );
+  const handleSaveSettings = useCallback((s: Settings) => {
+    const next = mergePlatformApiSettings({
+      language: s.language,
+      feedbackPrompt: s.feedbackPrompt,
+    });
     setSettings(next);
     try {
       localStorage.setItem('tw-settings', JSON.stringify({
         language: next.language,
         feedbackPrompt: next.feedbackPrompt,
-        userApiKey: s.userApiKey ?? '',
-        userApiBaseUrl: s.userApiBaseUrl ?? '',
-        userModel: s.userModel ?? '',
       }));
     } catch { /* */ }
   }, []);
