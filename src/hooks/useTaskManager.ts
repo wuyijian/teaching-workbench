@@ -331,6 +331,9 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
 
   const deleteTask = useCallback((id: string) => {
     stopFlags.current.set(id, true);
+    // 立即从内部队列和 pending 文件 map 里清除，保持内部状态与 tasks state 一致
+    queueRef.current = queueRef.current.filter(qid => qid !== id);
+    pendingRef.current.delete(id);
     setTasks(prev => {
       const removed = prev.find(t => t.id === id);
       const next = prev.filter(t => t.id !== id);
@@ -346,7 +349,10 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       }
       return next;
     });
-  }, []);
+    // 如果没有任务正在执行，主动触发一次 drain，
+    // 确保删掉排队任务后队列里剩余的任务立即启动
+    if (!runningRef.current) drain();
+  }, [drain]);
 
   const retryTask = useCallback((task: Task) => {
     if (!task.audioFile) return;
