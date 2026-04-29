@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────────
+# Mac 桌面端（Electron）Release 构建
+# 触发：手动 workflow_dispatch（避免每次 push 都跑耗时构建）
+#
+# 必须在仓库 Settings → Secrets and variables → Actions 配置：
+#   VITE_XF_APP_ID
+#   VITE_XF_ACCESS_KEY_ID
+#   VITE_XF_ACCESS_KEY_SECRET
+#   VITE_LLM_API_KEY
+#   VITE_LLM_MODEL          （可选，默认 kimi-k2.5）
+#   VITE_SUPABASE_URL        （可选，Electron 端无需 Supabase 也能用）
+#   VITE_SUPABASE_ANON_KEY   （可选）
+#
+# 产物：release/ 目录下的 .dmg（arm64 + x64）
+# 下载：Actions → 对应 run → Artifacts
+# ─────────────────────────────────────────────────────────────────────
+name: Build Mac Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_note:
+        description: '版本备注（仅用于 run 标题）'
+        required: false
+        default: ''
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write .env.production
+        # 把 Secrets 写入 .env.production，Vite build 时自动加载
+        env:
+          VITE_XF_APP_ID:              ${{ secrets.VITE_XF_APP_ID }}
+          VITE_XF_ACCESS_KEY_ID:       ${{ secrets.VITE_XF_ACCESS_KEY_ID }}
+          VITE_XF_ACCESS_KEY_SECRET:   ${{ secrets.VITE_XF_ACCESS_KEY_SECRET }}
+          VITE_LLM_API_KEY:            ${{ secrets.VITE_LLM_API_KEY }}
+          VITE_LLM_MODEL:              ${{ secrets.VITE_LLM_MODEL || 'kimi-k2.5' }}
+          VITE_SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:      ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          cat > .env.production << EOF
+          VITE_XF_APP_ID=${VITE_XF_APP_ID}
+          VITE_XF_ACCESS_KEY_ID=${VITE_XF_ACCESS_KEY_ID}
+          VITE_XF_ACCESS_KEY_SECRET=${VITE_XF_ACCESS_KEY_SECRET}
+          VITE_LLM_API_KEY=${VITE_LLM_API_KEY}
+          VITE_LLM_BASE_URL=https://api.moonshot.cn/v1
+          VITE_LLM_MODEL=${VITE_LLM_MODEL}
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          EOF
+
+      - name: Build Electron (Vite)
+        run: npm run build:electron
+
+      - name: Package Mac DMG (arm64 + x64)
+        run: npx electron-builder --mac --x64 --arm64
+        env:
+          # 不做代码签名（未申请 Apple 开发者证书）
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # electron-builder publish 不上传，仅本地打包
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload DMG artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-release-${{ github.run_number }}
+          path: |
+            release/*.dmg
+          retention-days: 30
+          if-no-files-found: error
