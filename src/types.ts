@@ -1,3 +1,5 @@
+export type AppMode = 'workbench' | 'archive' | 'agent';
+
 export interface TranscriptSegment {
   id: string;
   text: string;

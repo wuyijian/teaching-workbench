@@ -28,7 +28,11 @@
 @layer base {
   * { box-sizing: border-box; }
 
-  html { scroll-behavior: smooth; }
+  html {
+    scroll-behavior: smooth;
+    /* iOS Safari：防止双击缩放 */
+    touch-action: manipulation;
+  }
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
@@ -38,17 +42,27 @@
     -webkit-font-smoothing: antialiased;
     font-size: 14px;
     line-height: 1.5;
+    /* iOS Safari：防止长按弹出菜单干扰 */
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* 工作台模式：锁死高度禁止滚动 */
   body.app-mode {
-    height: 100vh;
+    /* dvh：动态视口高度，避免手机浏览器地址栏遮挡 */
+    height: 100dvh;
+    height: 100vh; /* fallback */
     overflow: hidden;
   }
   body.app-mode #root {
-    height: 100vh;
+    height: 100dvh;
+    height: 100vh; /* fallback */
     display: flex;
     flex-direction: column;
+  }
+
+  /* ── 手机端：触摸设备禁用 hover 残留 ── */
+  @media (hover: none) {
+    button:hover { opacity: 1 !important; }
   }
 }
 
@@ -119,6 +133,24 @@
   border-color: #388bfd60 !important;
   background-color: #1f3550 !important;
   box-shadow: 0 0 0 1px #388bfd30;
+}
+
+/* ─── Mobile: prevent horizontal overflow on landing page ────────────────── */
+@media (max-width: 639px) {
+  body:not(.app-mode) {
+    overflow-x: hidden;
+  }
+
+  /* 滚动容器惯性滚动（iOS） */
+  .overflow-y-auto,
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 手机端输入框：字体不小于 16px，防止 iOS 自动缩放 */
+  input, textarea, select {
+    font-size: max(16px, 1em);
+  }
 }
 
 /* ─── Markdown content ────────────────────────────────────────────────────── */
