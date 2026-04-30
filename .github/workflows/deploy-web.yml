@@ -45,7 +45,7 @@ on:
 
 concurrency:
   group: deploy-web
-  cancel-in-progress: false   # 避免并发部署导致目标目录半新半旧
+  cancel-in-progress: true    # 新推送自动取消排队中的旧任务，确保最新代码优先部署
 
 jobs:
   deploy:
