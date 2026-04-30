@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Bot, Clock, ChevronLeft } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Clock, ChevronLeft } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useSubscription, PLAN_CONFIG } from './context/SubscriptionContext';
 import { TaskPanel } from './components/TaskPanel';
