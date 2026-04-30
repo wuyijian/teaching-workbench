@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Plus, ChevronLeft, Trash2, RotateCcw, Copy, Check,
   FileAudio, Loader2, CheckCircle2, AlertCircle,
-  User, BookOpen, Upload, X, Sparkles,
+  User, BookOpen, Upload, X,
   Archive, ArchiveRestore, FileDown, ChevronRight,
   Mic, Pause, Play, Square,
 } from 'lucide-react';
@@ -45,30 +45,6 @@ export const PROMPT_PRESETS = [
   { label: '生成学习建议', value: '请根据以下课堂转写内容，为该学生制定具体可行的学习计划和建议，帮助其巩固所学知识。' },
   { label: '自定义…', value: '' },
 ];
-
-// ────────────────────────────────────────────────────────────────────────────
-// PromptPreview（可展开的 Prompt 预览块）
-// ────────────────────────────────────────────────────────────────────────────
-function PromptPreview({ prompt }: { prompt: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = prompt.length > 80;
-  return (
-    <>
-      <p className={`text-[11px] leading-relaxed whitespace-pre-wrap ${expanded ? '' : 'line-clamp-2'}`}
-        style={{ color: 'var(--text-2)' }}>
-        {prompt}
-      </p>
-      {isLong && (
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="mt-1 text-[10px] transition-colors"
-          style={{ color: 'var(--accent)' }}>
-          {expanded ? '收起 ▲' : '展开 ▼'}
-        </button>
-      )}
-    </>
-  );
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -135,9 +111,6 @@ function CreateForm({
 }) {
   const [studentName, setStudentName] = useState('');
   const [topic, setTopic] = useState('');
-  const [presetIdx, setPresetIdx] = useState(0); // 默认「课堂反馈」
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [promptExpanded, setPromptExpanded] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
@@ -147,9 +120,6 @@ function CreateForm({
 
   const isElectron = !!window.electronAPI;
   const recorder = useMediaRecorder();
-
-  const isCustom = presetIdx === PROMPT_PRESETS.length - 1;
-  const finalPrompt = isCustom ? customPrompt : PROMPT_PRESETS[presetIdx].value;
 
   const handleFile = useCallback((f: File) => setFile(f), []);
 
@@ -190,11 +160,11 @@ function CreateForm({
     }
   };
 
-  const canSubmit = studentName.trim() && file && finalPrompt.trim();
+  const canSubmit = studentName.trim() && file;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(studentName.trim(), topic.trim(), finalPrompt, file!);
+    onSubmit(studentName.trim(), topic.trim(), FEEDBACK_PROMPT, file!);
   };
 
   return (
@@ -233,51 +203,6 @@ function CreateForm({
             placeholder="如：数学 · 二次函数、英语 · 阅读理解"
             className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
           />
-        </div>
-
-        {/* Prompt presets */}
-        <div>
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-            <Sparkles size={11} /> AI 处理 Prompt <span className="text-red-400">*</span>
-          </label>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {PROMPT_PRESETS.map((p, i) => (
-              <button
-                key={p.label}
-                onClick={() => setPresetIdx(i)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
-                  presetIdx === i
-                    ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
-                    : 'bg-slate-800 border-slate-600 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {isCustom ? (
-            <textarea
-              value={customPrompt}
-              onChange={e => setCustomPrompt(e.target.value)}
-              placeholder="输入自定义 Prompt…"
-              rows={3}
-              className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors resize-none scrollbar-thin"
-            />
-          ) : (
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2">
-              <p className={`text-xs text-slate-400 leading-relaxed whitespace-pre-wrap ${promptExpanded ? '' : 'line-clamp-3'}`}>
-                {PROMPT_PRESETS[presetIdx].value}
-              </p>
-              {PROMPT_PRESETS[presetIdx].value.length > 120 && (
-                <button
-                  onClick={() => setPromptExpanded(v => !v)}
-                  className="mt-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  {promptExpanded ? '收起 ▲' : '展开查看完整 Prompt ▼'}
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Audio source */}
@@ -719,13 +644,6 @@ function TaskDetail({
           )}
           {iconBtn('删除', <Trash2 size={13} />, onDelete, 'var(--red)')}
         </div>
-      </div>
-
-      {/* Prompt preview */}
-      <div className="mx-3 mt-2.5 px-3 py-2 rounded-lg shrink-0"
-        style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
-        <p className="text-[10px] font-semibold mb-0.5 uppercase tracking-wide" style={{ color: 'var(--accent)' }}>Prompt</p>
-        <PromptPreview prompt={task.prompt} />
       </div>
 
       {/* Transcript */}

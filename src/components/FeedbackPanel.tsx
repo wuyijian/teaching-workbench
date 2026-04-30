@@ -2,11 +2,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, FileText, Copy, Check, Download, BookmarkCheck,
   RefreshCw, Send, Square, ChevronDown, Bot, User,
-  AlertCircle, Loader2, ClipboardList, ChevronUp, MessageCircle,
+  AlertCircle, Loader2, ClipboardList, ChevronUp, MessageCircle, Wand2,
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { FEEDBACK_PROMPT } from './TaskPanel';
+import { FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { resolveApiBase } from '../config/urls';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -239,7 +239,15 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [input, setInput] = useState('');
   const [notes, setNotes] = useState('');
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptPresetIdx, setPromptPresetIdx] = useState(0);
+  const [customPrompt, setCustomPrompt] = useState('');
   const [wechatOpen, setWechatOpen] = useState(false);
+
+  const isCustomPrompt = promptPresetIdx === PROMPT_PRESETS.length - 1;
+  const activePrompt = isCustomPrompt
+    ? customPrompt
+    : (PROMPT_PRESETS[promptPresetIdx]?.value ?? FEEDBACK_PROMPT);
 
   // 每个任务有独立的 abort controller，互不影响
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -328,7 +336,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
     const meta = [`日期：${dateStr}`, `学生姓名：${selectedTask.studentName}`, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
     const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
-    const prompt = effectiveFeedbackPrompt(settings);
+    // 优先使用工作区选择的 prompt，fallback 到全局设置 / 内置默认
+    const prompt = activePrompt.trim() || effectiveFeedbackPrompt(settings);
     const userContent = `${prompt}\n\n---\n${meta}${notesBlock}\n\n课堂录音转写内容：\n${transcript}`;
 
     try {
@@ -350,7 +359,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         abortControllers.current.delete(taskId);
       }
     }
-  }, [selectedTask, settings, notes, subscription, patchSession]);
+  }, [selectedTask, settings, notes, activePrompt, subscription, patchSession]);
 
   const cancel = () => {
     if (!selectedId) return;
@@ -469,6 +478,68 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             )
           )}
         </div>
+
+        {/* Prompt 选择区 */}
+        {selectedTask && (
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              onClick={() => setPromptExpanded(v => !v)}
+              className="flex items-center gap-1.5 w-full text-left transition-colors"
+              style={{ padding: '5px 12px', color: 'var(--text-3)', fontSize: 11 }}
+            >
+              <Wand2 size={11} style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }} />
+              <span className="flex-1" style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }}>
+                Prompt：{PROMPT_PRESETS[promptPresetIdx]?.label ?? '课堂反馈'}
+              </span>
+              {promptExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+            </button>
+            {promptExpanded && (
+              <div style={{ padding: '0 12px 8px' }}>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {PROMPT_PRESETS.map((p, i) => (
+                    <button
+                      key={p.label}
+                      onClick={() => setPromptPresetIdx(i)}
+                      className="text-xs px-2.5 py-1 rounded-full border transition-all"
+                      style={promptPresetIdx === i ? {
+                        background: 'var(--accent-dim)',
+                        borderColor: 'var(--accent)',
+                        color: 'var(--accent)',
+                      } : {
+                        background: 'var(--bg-s2)',
+                        borderColor: 'var(--border)',
+                        color: 'var(--text-3)',
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {isCustomPrompt ? (
+                  <textarea
+                    value={customPrompt}
+                    onChange={e => setCustomPrompt(e.target.value)}
+                    placeholder="输入自定义 Prompt…"
+                    rows={3}
+                    className="scrollbar-thin w-full resize-none outline-none rounded-lg text-xs"
+                    style={{
+                      background: 'var(--bg-s2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-2)',
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                    }}
+                  />
+                ) : (
+                  <div className="text-[11px] leading-relaxed line-clamp-3 px-2 py-1.5 rounded-lg"
+                    style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', color: 'var(--text-3)', whiteSpace: 'pre-wrap' }}>
+                    {PROMPT_PRESETS[promptPresetIdx]?.value ?? ''}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 补充信息折叠区 */}
         {selectedTask && (
