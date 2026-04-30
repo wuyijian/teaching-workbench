@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Settings as SettingsIcon, BookOpen, LogOut, User, Zap, Home, Users, Layout, Bot, Clock } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useSubscription, PLAN_CONFIG } from './context/SubscriptionContext';
@@ -12,6 +12,9 @@ import { useTaskManager } from './hooks/useTaskManager';
 import { isElectronTarget, isRunningInElectron } from './config/app';
 import { mergePlatformApiSettings, hasPlatformLlm, hasPlatformXf } from './config/platformApi';
 import type { Settings } from './types';
+import { useOnboarding } from './hooks/useOnboarding';
+import { OnboardingGuide } from './components/OnboardingGuide';
+import { DEMO_LESSON } from './data/demoLesson';
 
 type AppMode = 'workbench' | 'archive' | 'agent';
 
@@ -53,6 +56,44 @@ export default function App() {
   });
 
   const needsConfig = !hasPlatformLlm() || !hasPlatformXf();
+
+  // ── 新手引导 ──────────────────────────────────────────────────────────────
+  const onboarding = useOnboarding();
+
+  // 监听 OnboardingGuide 内部事件，推进步骤
+  useEffect(() => {
+    const onTranscript = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail.id;
+      setSelectedTaskId(id);
+      onboarding.advance('transcript');
+    };
+    const onFeedback = () => onboarding.advance('feedback');
+    window.addEventListener('onboarding:transcript', onTranscript);
+    window.addEventListener('onboarding:feedback', onFeedback);
+    return () => {
+      window.removeEventListener('onboarding:transcript', onTranscript);
+      window.removeEventListener('onboarding:feedback', onFeedback);
+    };
+  }, [onboarding]);
+
+  // Demo 注入函数（由 OnboardingGuide 调用）
+  const handleInjectDemo = useCallback(() => {
+    const prompt = settings.feedbackPrompt ?? '';
+    return taskManager.injectDoneTask(
+      DEMO_LESSON.studentName,
+      DEMO_LESSON.topic,
+      prompt,
+      DEMO_LESSON.audioFileName,
+      DEMO_LESSON.segments,
+    );
+  }, [taskManager, settings.feedbackPrompt]);
+
+  // 当前选中任务是否已有 AI 反馈（供引导检测）
+  const selectedTaskHasFeedback = useMemo(() => {
+    if (!selectedTaskId) return false;
+    const t = taskManager.tasks.find(t => t.id === selectedTaskId);
+    return !!(t?.aiSummary);
+  }, [selectedTaskId, taskManager.tasks]);
 
   const handleSaveSettings = useCallback((s: Settings) => {
     const next = mergePlatformApiSettings({
@@ -319,6 +360,19 @@ export default function App() {
           settings={settings}
           onSave={handleSaveSettings}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* 新手引导 */}
+      {onboarding.step !== 'idle' && (
+        <OnboardingGuide
+          step={onboarding.step}
+          onStart={() => onboarding.advance('creating')}
+          onSkip={onboarding.skip}
+          onComplete={onboarding.complete}
+          onInjectDemo={handleInjectDemo}
+          onSelectTask={setSelectedTaskId}
+          selectedTaskHasFeedback={selectedTaskHasFeedback}
         />
       )}
     </div>

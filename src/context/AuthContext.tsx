@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { AuthModal } from '../components/AuthModal';
+import { markOnboardingNeeded } from '../hooks/useOnboarding';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (error) return localizeError(error.message);
     const needsConfirm = !data.session && (data.user?.identities?.length ?? 0) > 0;
+    // 新用户注册成功后标记需要新手引导（无论是否需要邮件验证）
+    if (!error) markOnboardingNeeded();
     return needsConfirm ? { needsConfirm: true } : null;
   }, []);
 

@@ -367,6 +367,31 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     if (!runningRef.current) drain();
   }, [drain]);
 
+  /**
+   * 新手引导专用：直接注入一条已完成的任务（跳过API转写，不扣配额）
+   * 返回新任务 id，供引导流程自动选中。
+   */
+  const injectDoneTask = useCallback((
+    studentName: string,
+    topic: string,
+    prompt: string,
+    audioFileName: string,
+    segments: Task['segments'],
+  ): string => {
+    const id = uid();
+    const newTask: Task = {
+      id, studentName, topic, prompt, engine: 'xfyun',
+      audioFileName,
+      status: 'done',
+      progress: 100,
+      segments,
+      error: null,
+      createdAt: Date.now(),
+    };
+    setTasks(prev => [newTask, ...prev]);
+    return id;
+  }, []);
+
   const retryTask = useCallback((task: Task) => {
     if (!task.audioFile) return;
     deleteTask(task.id);
@@ -406,6 +431,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     tasks,
     archivedStudents,
     createTask,
+    injectDoneTask,
     cancelTask,
     deleteTask,
     retryTask,
