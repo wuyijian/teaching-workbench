@@ -118,9 +118,16 @@ jobs:
           printf 'VITE_WECHAT_APP_ID         len=%s\n' "${#VITE_WECHAT_APP_ID}"
           echo "─────────────────────────────────────────────────────"
 
-      # 5b. 烟测（可选跳过）：tsc + 讯飞鉴权 + 大模型鉴权 + 流式
-      - name: Smoke test (tsc + xfyun + llm)
+      # 5b-1. TSC 类型检查（强制，失败则终止部署）
+      - name: Type check (tsc)
+        run: npx tsc --noEmit
+
+      # 5b-2. API 烟测（讯飞 + 大模型）：
+      #   GitHub 美国 runner → 中国 API 网络不稳定，continue-on-error 避免
+      #   偶发超时卡死部署流程；日志里仍然可见成功 / 失败详情
+      - name: Smoke test (xfyun + llm) — non-blocking
         if: ${{ inputs.skip_smoke != true }}
+        continue-on-error: true
         run: npm run smoke
 
       # 6. 构建产物 → dist/
