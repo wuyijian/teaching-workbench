@@ -27,7 +27,7 @@ function header(title) {
   console.log(CYAN + '━'.repeat(60) + RESET);
 }
 
-function run(label, cmd, args, opts = {}) {
+function run(label, cmd, args, opts = {}, retries = 0) {
   header(label);
   const t0 = Date.now();
   const r = spawnSync(cmd, args, {
@@ -40,6 +40,14 @@ function run(label, cmd, args, opts = {}) {
   if (r.status === 0) {
     console.log(`\n${GREEN}✓ ${label} 通过${RESET} ${DIM}(${elapsed}s)${RESET}`);
     return true;
+  }
+  if (retries > 0) {
+    console.log(`\n${YEL}⚠ ${label} 失败，${retries} 秒后重试…${RESET} ${DIM}(${elapsed}s, exit=${r.status})${RESET}`);
+    const wait = spawnSync(process.platform === 'win32' ? 'timeout' : 'sleep',
+      process.platform === 'win32' ? ['/T', String(retries), '/NOBREAK'] : [String(retries)],
+      { stdio: 'ignore', shell: process.platform === 'win32' });
+    void wait;
+    return run(label, cmd, args, opts, 0);
   }
   console.log(`\n${RED}✗ ${label} 失败${RESET} ${DIM}(${elapsed}s, exit=${r.status})${RESET}`);
   return false;
@@ -73,11 +81,11 @@ const results = [];
 // ── 1) TypeScript 编译 ──
 results.push({ name: 'TypeScript 编译', ok: run('TypeScript 编译 (tsc --noEmit)', 'npx', ['tsc', '--noEmit']) });
 
-// ── 2) 讯飞转写鉴权 ──
-results.push({ name: '讯飞转写鉴权', ok: run('讯飞转写鉴权 (xfyun-smoke)', 'node', ['scripts/xfyun-smoke.mjs']) });
+// ── 2) 讯飞转写鉴权（网络抖动最多重试一次） ──
+results.push({ name: '讯飞转写鉴权', ok: run('讯飞转写鉴权 (xfyun-smoke)', 'node', ['scripts/xfyun-smoke.mjs'], {}, 5) });
 
-// ── 3) 大模型鉴权 + 流式 ──
-results.push({ name: '大模型 LLM 鉴权 + 流式', ok: run('大模型 LLM 鉴权 + 流式 (llm-smoke)', 'node', ['scripts/llm-smoke.mjs']) });
+// ── 3) 大模型鉴权 + 流式（网络抖动最多重试一次） ──
+results.push({ name: '大模型 LLM 鉴权 + 流式', ok: run('大模型 LLM 鉴权 + 流式 (llm-smoke)', 'node', ['scripts/llm-smoke.mjs'], {}, 5) });
 
 // ── 4) Supabase 连通性（可选） ──
 if (env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY) {
