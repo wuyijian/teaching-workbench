@@ -273,7 +273,7 @@ function CreateForm({
                   ref={inputRef}
                   type="file"
                   hidden
-                  accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac"
+                  accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac,.caf"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
                 />
               )}

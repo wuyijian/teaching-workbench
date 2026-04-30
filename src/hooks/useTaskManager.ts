@@ -159,6 +159,11 @@ async function transcribeXfyun(
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&');
 
+  // 文件大小基础校验：XFYun 要求 >= 600 字节
+  if (file.size < 600) {
+    throw new Error(`文件太小（${file.size} 字节），请上传有效的音频文件`);
+  }
+
   onProgress(10);
   const upResp = await fetch(`${xfyunProxyBase}/v2/upload?${query}`, {
     method: 'POST',
@@ -168,6 +173,12 @@ async function transcribeXfyun(
     },
     body: file,
   });
+
+  // 先检查 HTTP 状态，Nginx 的 413/408/502 等错误页是 HTML，不能直接 .json()
+  if (!upResp.ok) {
+    throw new Error(`上传请求失败（HTTP ${upResp.status}）${upResp.status === 413 ? '：文件超过服务器限制（500MB）' : upResp.status === 408 ? '：上传超时，请在 WiFi 环境下重试' : ''}`);
+  }
+
   const upData = await upResp.json();
   if (upData.code !== '000000') throw new Error(`讯飞上传失败：${upData.descInfo ?? upData.code}`);
   const orderId = upData.content.orderId as string;

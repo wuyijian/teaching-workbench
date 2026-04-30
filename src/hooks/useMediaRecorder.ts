@@ -3,7 +3,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export type RecordState = 'idle' | 'requesting' | 'recording' | 'paused' | 'done';
 
 function buildFileName(mimeType: string): string {
-  const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
+  let ext = 'webm';
+  if (mimeType.includes('ogg')) ext = 'ogg';
+  // iOS Safari 只支持 audio/mp4，需要用 .m4a 扩展名让 XFYun 正确识别格式
+  else if (mimeType.includes('mp4') || mimeType.includes('m4a')) ext = 'm4a';
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `录音_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}.${ext}`;
@@ -15,6 +18,8 @@ function preferredMimeType(): string {
     'audio/webm',
     'audio/ogg;codecs=opus',
     'audio/ogg',
+    // iOS Safari 14.3+ 只支持 mp4 容器
+    'audio/mp4',
   ];
   return candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
 }
