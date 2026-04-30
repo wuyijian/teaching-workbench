@@ -12,6 +12,7 @@ import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
 import { formatParentMessage } from '../utils/wechat';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Resolve the effective prompt: settings override → built-in default
 export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
@@ -223,6 +224,7 @@ const EMPTY_SESSION: GenSession = {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
   const subscription = useSubscription();
+  const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (selectedTaskId) return selectedTaskId;
     const done = tasks.filter(t => t.status === 'done');
@@ -445,8 +447,11 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   const btnStyle = (active = false) => ({
     display: 'flex', alignItems: 'center', gap: 4,
-    fontSize: 11, padding: '5px 10px', borderRadius: 8,
+    fontSize: isMobile ? 12 : 11,
+    padding: isMobile ? '8px 14px' : '5px 10px',
+    borderRadius: 8,
     cursor: 'pointer', transition: 'all 0.15s',
+    minHeight: isMobile ? 36 : undefined,
     color: active ? 'var(--green)' : 'var(--text-2)',
     background: active ? 'var(--green-dim)' : 'var(--bg-s2)',
     border: `1px solid ${active ? '#1e4d27' : 'var(--border)'}`,
@@ -456,7 +461,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center justify-between" style={{ padding: '8px 12px' }}>
+        <div className="flex items-center justify-between" style={{ padding: isMobile ? '10px 12px' : '8px 12px' }}>
           <TaskSelector
             tasks={tasks}
             selectedId={selectedId}
@@ -466,13 +471,15 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           {selectedTask && (
             isGenerating ? (
               <button onClick={cancel} style={{ ...btnStyle(), color: 'var(--red)', background: 'var(--red-dim)', borderColor: '#5a1e1e' }}>
-                <Square size={10} /> 停止
+                <Square size={isMobile ? 12 : 10} /> 停止
               </button>
             ) : (
-              <button onClick={generate} style={{ ...btnStyle(), color: '#fff', background: 'var(--accent)', borderColor: 'transparent' }}
+              <button onClick={generate}
+                style={{ ...btnStyle(), color: '#fff', background: 'var(--accent)', borderColor: 'transparent',
+                         fontWeight: isMobile ? 600 : undefined }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-                {hasFeedback ? <RefreshCw size={10} /> : <Sparkles size={10} />}
+                {hasFeedback ? <RefreshCw size={isMobile ? 13 : 10} /> : <Sparkles size={isMobile ? 13 : 10} />}
                 {hasFeedback ? '重新生成' : '生成反馈'}
               </button>
             )
@@ -485,7 +492,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             <button
               onClick={() => setPromptExpanded(v => !v)}
               className="flex items-center gap-1.5 w-full text-left transition-colors"
-              style={{ padding: '5px 12px', color: 'var(--text-3)', fontSize: 11 }}
+              style={{ padding: isMobile ? '10px 12px' : '5px 12px', color: 'var(--text-3)', fontSize: 11, minHeight: isMobile ? 40 : undefined }}
             >
               <Wand2 size={11} style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }} />
               <span className="flex-1" style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }}>
@@ -547,7 +554,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             <button
               onClick={() => setNotesExpanded(v => !v)}
               className="flex items-center gap-1.5 w-full text-left transition-colors"
-              style={{ padding: '5px 12px', color: notes.trim() ? 'var(--accent)' : 'var(--text-3)', fontSize: 11 }}
+              style={{ padding: isMobile ? '10px 12px' : '5px 12px', color: notes.trim() ? 'var(--accent)' : 'var(--text-3)', fontSize: 11, minHeight: isMobile ? 40 : undefined }}
             >
               <ClipboardList size={11} />
               <span className="flex-1">{notes.trim() ? `补充信息：${notes.slice(0, 30)}${notes.length > 30 ? '…' : ''}` : '添加补充信息（课前检测、课堂观察等）'}</span>
@@ -614,11 +621,17 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               </p>
             </div>
             <button onClick={generate}
-              className="flex items-center gap-2 text-sm font-medium rounded-xl transition-all"
-              style={{ padding: '9px 22px', background: 'var(--accent)', color: '#fff', border: 'none' }}
+              className="flex items-center gap-2 font-semibold rounded-xl transition-all"
+              style={{
+                padding: isMobile ? '14px 32px' : '9px 22px',
+                fontSize: isMobile ? 16 : 14,
+                background: 'var(--accent)', color: '#fff', border: 'none',
+                minWidth: isMobile ? 200 : undefined,
+                justifyContent: 'center',
+              }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-              <Sparkles size={14} /> 生成课堂反馈
+              <Sparkles size={isMobile ? 18 : 14} /> 生成课堂反馈
             </button>
           </div>
         )}
@@ -699,36 +712,36 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
       {/* Follow-up input */}
       {hasFeedback && (
-        <div className="shrink-0" style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+        <div className="shrink-0" style={{ padding: isMobile ? '10px 12px' : '8px 12px', borderTop: '1px solid var(--border)' }}>
           <div className="flex gap-2 items-end">
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp(); } }}
-              placeholder="针对此反馈追问… (Enter 发送)"
+              placeholder={isMobile ? '追问 AI…' : '针对此反馈追问… (Enter 发送)'}
               rows={1}
               className="scrollbar-thin flex-1 resize-none outline-none rounded-xl"
               style={{
                 background: 'var(--bg-s2)',
                 border: '1px solid var(--border)',
                 color: 'var(--text-1)',
-                fontSize: 13,
-                padding: '8px 12px',
+                fontSize: isMobile ? 16 : 13,
+                padding: isMobile ? '10px 14px' : '8px 12px',
               }}
               onFocus={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'}
               onBlur={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
             />
             {isFollowUp ? (
               <button onClick={cancel}
-                className="p-2 rounded-xl transition-all"
-                style={{ background: 'var(--red-dim)', border: '1px solid #5a1e1e', color: 'var(--red)' }}>
-                <Square size={14} />
+                className="rounded-xl transition-all"
+                style={{ padding: isMobile ? '10px 12px' : '8px 8px', background: 'var(--red-dim)', border: '1px solid #5a1e1e', color: 'var(--red)' }}>
+                <Square size={isMobile ? 16 : 14} />
               </button>
             ) : (
               <button onClick={handleFollowUp} disabled={!input.trim()}
-                className="p-2 rounded-xl transition-all"
-                style={{ background: 'var(--accent)', color: '#fff', border: 'none', opacity: input.trim() ? 1 : 0.3 }}>
-                <Send size={14} />
+                className="rounded-xl transition-all"
+                style={{ padding: isMobile ? '10px 12px' : '8px 8px', background: 'var(--accent)', color: '#fff', border: 'none', opacity: input.trim() ? 1 : 0.3 }}>
+                <Send size={isMobile ? 16 : 14} />
               </button>
             )}
           </div>
