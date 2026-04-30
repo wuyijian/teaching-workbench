@@ -46,56 +46,66 @@ const MAX_PERSISTED_MESSAGES = 60; // keep recent N messages to avoid bloat
 // ─── Tool Label Map ───────────────────────────────────────────────────────────
 
 const TOOL_LABELS: Record<string, string> = {
-  list_tasks:           '查询任务列表',
-  get_transcript:       '读取转写内容',
-  get_student_history:  '查看学生历史',
-  save_feedback:        '保存课堂反馈',
-  get_class_overview:   '获取全班概况',
-  search_tasks:         '搜索任务',
-  get_student_file:     '读取学生档案',
-  update_student_file:  '更新学生档案',
-  list_student_files:   '查看所有学生档案',
-  get_global_memory:    '读取全局记忆',
-  update_global_memory: '更新全局记忆',
+  list_tasks:                '查询任务列表',
+  get_transcript:            '读取转写内容',
+  get_student_history:       '查看学生历史',
+  save_feedback:             '保存课堂反馈',
+  get_class_overview:        '获取全班概况',
+  search_tasks:              '搜索任务',
+  get_student_file:          '读取学生档案',
+  update_student_file:       '更新学生档案',
+  list_student_files:        '查看所有学生档案',
+  get_global_memory:         '读取全局记忆',
+  update_global_memory:      '更新全局记忆',
+  analyze_student_progress:  '分析学生进步轨迹',
+  get_recent_tasks:          '筛选近期任务',
 };
 
 const MAX_ITERATIONS = 12;
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(globalMemory: string, feedbackPrompt: string): string {
+function buildSystemPrompt(
+  globalMemory: string,
+  feedbackPrompt: string,
+  contextHint: string,
+): string {
   const memSection = globalMemory.trim()
-    ? `\n\n---\n\n${globalMemory.trim()}`
+    ? `\n\n---\n\n## 全局记忆\n${globalMemory.trim()}`
     : '';
 
   return `你是语文教学工作台的 AI 助手，帮助语文教师分析课堂录音转写文本并生成家长反馈。
 
+${contextHint}
+
 你拥有以下工具：
 
-**教学数据**
+**教学数据查询**
 - list_tasks：列出任务（pending_feedback / done / all）
-- get_transcript：获取转写全文（生成反馈前必须调用）
-- get_student_history：查看学生历史课节（含以往反馈）
-- save_feedback：保存课堂反馈到任务（生成后立即调用）
-- get_class_overview：全班概况
-- search_tasks：关键词搜索转写内容
+- get_transcript：获取转写全文（生成反馈前必须先调用）
+- get_student_history：查看学生全部历史课节（含以往反馈摘要）
+- save_feedback：保存课堂反馈到指定任务（生成后立即调用，无需确认）
+- get_class_overview：获取全班概况（人数/课次/待处理统计）
+- search_tasks：全文搜索转写内容关键词
+- get_recent_tasks：按天数筛选近期任务（days=1 今天，days=7 本周）
 
-**学生专属档案**（Markdown 文件，跨对话持久化）
-- get_student_file：读取某学生的 Markdown 档案（处理该学生任务前建议先调用）
-- update_student_file：保存更新后的学生档案（先读取 → 追加新内容 → 保存完整文件）
-- list_student_files：查看哪些学生已有档案
+**学生成长分析**
+- analyze_student_progress：纵向分析某学生跨多节课的进步轨迹与关键词趋势
+- get_student_file：读取某学生的专属档案（处理任务前建议先调用）
+- update_student_file：保存/更新学生档案（先读取 → 追加 → 保存完整文件）
+- list_student_files：查看所有已有档案的学生
 
-**全局记忆**（Markdown 文件）
-- get_global_memory：读取全局记忆文件
-- update_global_memory：保存更新后的全局记忆
+**全局记忆**
+- get_global_memory：读取全局记忆（班级情况、教学规律、提醒事项）
+- update_global_memory：更新全局记忆
 
 工作原则：
-1. 处理某学生任务前，先调用 get_student_file 读取其档案，将档案中的了解融入反馈
-2. 每次处理完成后，调用 update_student_file 追加本次新发现的学生特点或跟进事项
-3. 反馈生成后立即调用 save_feedback，无需等待用户确认
-4. 批量处理时逐个循环：get_student_file → get_transcript → 生成反馈 → save_feedback → update_student_file
-5. 档案文件格式为 Markdown，# 开头是学生姓名，## 开头是分类（性格特点/学习状态/待跟进/家庭背景等）
-6. 所有回复使用简体中文，语气专业亲切
+1. **先读档案再处理**：处理某学生任务前，先调用 get_student_file，将档案中的已知信息融入反馈
+2. **处理后更新档案**：每次处理完成后，调用 update_student_file 追加本次新发现的特点
+3. **立即保存反馈**：反馈生成后立即调用 save_feedback，不需要等用户确认
+4. **批量处理顺序**：get_student_file → get_transcript → 生成反馈 → save_feedback → update_student_file
+5. **档案格式**：Markdown，# 学生姓名，## 分类（性格特点/学习状态/待跟进/家庭背景等）
+6. **语气**：专业亲切，简体中文，回复尽量结构化（用 Markdown 表格/列表）
 
 生成反馈时，使用以下 Prompt 模板（教师自定义）：
 
@@ -103,6 +113,141 @@ function buildSystemPrompt(globalMemory: string, feedbackPrompt: string): string
 ${feedbackPrompt}
 ---
 ${memSection}`;
+}
+
+// ─── 为系统提示构建当前上下文摘要 ────────────────────────────────────────────
+
+function buildContextHint(tasks: Task[]): string {
+  const today = new Date().toLocaleDateString('zh-CN', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  });
+  const todayCutoff = new Date(); todayCutoff.setHours(0, 0, 0, 0);
+  const todayTasks = tasks.filter(t => t.createdAt >= todayCutoff.getTime());
+  const pendingFeedback = tasks.filter(t => t.status === 'done' && !t.aiSummary && t.segments.length > 0).length;
+  const totalDone = tasks.filter(t => t.status === 'done').length;
+  const studentSet = new Set(tasks.map(t => t.studentName.trim()).filter(Boolean));
+
+  const parts = [
+    `**当前时间**：${today}`,
+    `**任务概况**：共 ${tasks.length} 条任务，${totalDone} 条已完成转写，${studentSet.size} 名学生`,
+    pendingFeedback > 0
+      ? `**待处理**：⚠️ 有 ${pendingFeedback} 条任务尚未生成 AI 反馈`
+      : '**待处理**：全部任务反馈已完成 ✅',
+    todayTasks.length > 0
+      ? `**今日新增**：${todayTasks.length} 条任务`
+      : '',
+  ].filter(Boolean).join('\n');
+
+  return parts;
+}
+
+// ─── Streaming LLM call ───────────────────────────────────────────────────────
+
+interface StreamResult {
+  content: string | null;
+  tool_calls: ToolCall[] | undefined;
+}
+
+async function callLLMStreaming(
+  messages: AgentMessage[],
+  tools: typeof TOOL_DEFINITIONS,
+  apiBase: string,
+  apiKey: string,
+  model: string,
+  signal: AbortSignal,
+  onContentChunk: (chunk: string) => void,
+): Promise<StreamResult> {
+  const resp = await fetch(`${apiBase}/chat/completions`, {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools,
+      tool_choice: 'auto',
+      stream: true,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`API 错误 ${resp.status}: ${text}`);
+  }
+
+  let content = '';
+  // tool_call fragments keyed by index
+  const tcMap = new Map<number, { id: string; name: string; args: string }>();
+
+  const processLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const data = line.slice(6).trim();
+    if (data === '[DONE]') return;
+    let parsed: unknown;
+    try { parsed = JSON.parse(data); } catch { return; }
+    const p = parsed as {
+      choices?: Array<{
+        delta?: {
+          content?: string;
+          tool_calls?: Array<{
+            index: number; id?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+      }>;
+    };
+    const delta = p.choices?.[0]?.delta;
+    if (!delta) return;
+
+    if (typeof delta.content === 'string' && delta.content) {
+      content += delta.content;
+      onContentChunk(delta.content);
+    }
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index;
+        if (!tcMap.has(idx)) tcMap.set(idx, { id: '', name: '', args: '' });
+        const entry = tcMap.get(idx)!;
+        if (tc.id)                    entry.id   += tc.id;
+        if (tc.function?.name)        entry.name += tc.function.name;
+        if (tc.function?.arguments)   entry.args += tc.function.arguments;
+      }
+    }
+  };
+
+  // Safari 14 compat: resp.body may be null → fall back to text()
+  if (!resp.body) {
+    const text = await resp.text();
+    for (const line of text.split('\n')) processLine(line);
+  } else {
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value);
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) processLine(line);
+    }
+    if (buf) processLine(buf);
+  }
+
+  const tool_calls = tcMap.size > 0
+    ? Array.from(tcMap.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, tc]) => ({
+          id: tc.id || `tc-${Math.random().toString(36).slice(2)}`,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.args },
+        }))
+    : undefined;
+
+  return { content: content || null, tool_calls };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,7 +290,8 @@ export function useAgent(
   const [studentFiles, setStudentFiles] = useState<StudentFile[]>(() =>
     Object.values(loadStudentStore()),
   );
-  const [running, setRunning] = useState(false);
+  const [running, setRunning]           = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
   // keep refs updated so async closures see latest values
@@ -167,6 +313,7 @@ export function useAgent(
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
+    setStreamingContent('');
   }, []);
 
   const clear = useCallback(() => {
@@ -197,7 +344,11 @@ export function useAgent(
       // Build API history: system (with global memory + custom prompt) + prior turns + new message
       const systemMsg: AgentMessage = {
         role: 'system',
-        content: buildSystemPrompt(loadGlobalMemory(), effectiveFeedbackPrompt(settingsRef.current)),
+        content: buildSystemPrompt(
+          loadGlobalMemory(),
+          effectiveFeedbackPrompt(settingsRef.current),
+          buildContextHint(tasksRef.current),
+        ),
       };
       let history: AgentMessage[] = [
         systemMsg,
@@ -217,52 +368,33 @@ export function useAgent(
         for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
           if (ctrl.signal.aborted) break;
 
-          const resp = await fetch(`${base}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${s.apiKey}`,
+          // 流式调用：content 块实时推送，tool_calls 完整收集后执行
+          let streamedContent = '';
+          const { content: rawContent, tool_calls: rawToolCalls } = await callLLMStreaming(
+            history,
+            TOOL_DEFINITIONS,
+            base,
+            s.apiKey,
+            s.model,
+            ctrl.signal,
+            chunk => {
+              streamedContent += chunk;
+              setStreamingContent(streamedContent);
             },
-            body: JSON.stringify({
-              model: s.model,
-              messages: history,
-              tools: TOOL_DEFINITIONS,
-              tool_choice: 'auto',
-            }),
-            signal: ctrl.signal,
-          });
+          );
 
-          if (!resp.ok) {
-            const text = await resp.text();
-            throw new Error(`API 错误 ${resp.status}: ${text}`);
-          }
+          // 清除流式缓冲
+          setStreamingContent('');
 
-          interface LLMMessage {
-            role: string;
-            content: string | null;
-            tool_calls?: ToolCall[];
-            reasoning_content?: string;
-            thinking?: unknown;
-          }
-          interface LLMResponse {
-            choices: Array<{ message: LLMMessage; finish_reason: string }>;
-          }
-
-          const data = (await resp.json()) as LLMResponse;
-          const raw  = data.choices[0].message;
-
-          // Preserve all raw fields so reasoning models echo correctly
           const assistantMsg: AgentMessage = {
             role: 'assistant',
-            content: raw.content,
-            tool_calls: raw.tool_calls,
-            ...(raw.reasoning_content !== undefined && { reasoning_content: raw.reasoning_content }),
-            ...(raw.thinking          !== undefined && { thinking: raw.thinking }),
+            content: rawContent,
+            tool_calls: rawToolCalls,
           };
           history = [...history, assistantMsg];
 
           // No tool calls → final answer
-          if (!raw.tool_calls || raw.tool_calls.length === 0) {
+          if (!rawToolCalls || rawToolCalls.length === 0) {
             setMessages(prev => [...prev, assistantMsg]);
             break;
           }
@@ -271,7 +403,7 @@ export function useAgent(
 
           // Execute tool calls
           const toolResults: AgentMessage[] = [];
-          for (const tc of raw.tool_calls) {
+          for (const tc of rawToolCalls) {
             const args = (() => {
               try { return JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>; }
               catch { return {} as Record<string, unknown>; }
@@ -321,11 +453,12 @@ export function useAgent(
         }
       } finally {
         setRunning(false);
+        setStreamingContent('');
         abortRef.current = null;
       }
     },
     [running, messages, refreshMemories], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  return { messages, toolLog, globalMemory, studentFiles, running, send, stop, clear, deleteStudentFile };
+  return { messages, toolLog, globalMemory, studentFiles, running, streamingContent, send, stop, clear, deleteStudentFile };
 }

@@ -233,6 +233,41 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+
+  // ── 分析工具 ───────────────────────────────────────────────────────────────
+  {
+    type: 'function' as const,
+    function: {
+      name: 'analyze_student_progress',
+      description: '纵向分析某学生跨多节课的进步情况：对比不同课次的反馈主题、老师评价关键词、知识点变化趋势，输出结构化进步报告。',
+      parameters: {
+        type: 'object',
+        properties: {
+          student_name: { type: 'string' },
+        },
+        required: ['student_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_recent_tasks',
+      description: '按时间范围筛选任务。days=7 表示最近 7 天，days=30 表示最近 30 天，days=1 表示今天。',
+      parameters: {
+        type: 'object',
+        properties: {
+          days: { type: 'number', description: '最近 N 天，默认 7' },
+          status: {
+            type: 'string',
+            enum: ['all', 'done', 'pending_feedback'],
+            description: '默认 all',
+          },
+        },
+        required: ['days'],
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = typeof TOOL_DEFINITIONS[number]['function']['name'];
@@ -434,6 +469,73 @@ export function executeTool(
       saveGlobalMemory(md);
       ctx.onMemoryChange?.();
       return { success: true, chars: md.length };
+    }
+
+    case 'analyze_student_progress': {
+      const key = normalizeStudentKey(args.student_name as string);
+      const studentTasks = ctx.tasks
+        .filter(t => normalizeStudentKey(t.studentName) === key && t.status === 'done')
+        .sort((a, b) => a.createdAt - b.createdAt);
+      if (studentTasks.length === 0) return { error: `未找到学生「${args.student_name}」的已完成任务` };
+
+      const lessons = studentTasks.map(t => {
+        const feedback = t.aiSummary ?? null;
+        // 简单关键词抽取：从反馈中找形容词/评价词
+        const keywords: string[] = [];
+        if (feedback) {
+          const positiveHints = ['主动', '积极', '进步', '理解', '掌握', '认真', '出色', '亮点'];
+          const improvHints   = ['薄弱', '错误', '不足', '待提高', '需注意', '建议', '问题'];
+          positiveHints.forEach(w => { if (feedback.includes(w)) keywords.push(`+${w}`); });
+          improvHints.forEach(w =>   { if (feedback.includes(w)) keywords.push(`-${w}`); });
+        }
+        return {
+          date: new Date(t.createdAt).toLocaleDateString('zh-CN'),
+          topic: t.topic || '（无主题）',
+          charCount: t.segments.reduce((n, s) => n + s.text.length, 0),
+          hasFeedback: !!feedback,
+          feedbackPreview: feedback ? feedback.slice(0, 150) + (feedback.length > 150 ? '…' : '') : null,
+          keywords,
+        };
+      });
+
+      const totalLessons = lessons.length;
+      const lessonsWithFeedback = lessons.filter(l => l.hasFeedback).length;
+      const allKeywords = lessons.flatMap(l => l.keywords);
+      const posCount = allKeywords.filter(k => k.startsWith('+')).length;
+      const negCount = allKeywords.filter(k => k.startsWith('-')).length;
+
+      return {
+        studentName: studentTasks[0].studentName,
+        totalLessons,
+        lessonsWithFeedback,
+        timeSpan: totalLessons > 1
+          ? `${lessons[0].date} ~ ${lessons[totalLessons - 1].date}`
+          : lessons[0].date,
+        overallTrend: posCount > negCount ? '整体积极' : negCount > posCount ? '需重点关注' : '表现平稳',
+        posKeywordCount: posCount,
+        negKeywordCount: negCount,
+        lessons,
+      };
+    }
+
+    case 'get_recent_tasks': {
+      const days  = (args.days as number) ?? 7;
+      const status = (args.status as string) ?? 'all';
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      let result = ctx.tasks.filter(t => t.createdAt >= cutoff);
+      if (status === 'done')             result = result.filter(t => t.status === 'done');
+      if (status === 'pending_feedback') result = result.filter(t => t.status === 'done' && !t.aiSummary && t.segments.length > 0);
+      return result
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map(t => ({
+          id: t.id,
+          studentName: t.studentName,
+          topic: t.topic,
+          status: t.status,
+          date: new Date(t.createdAt).toLocaleString('zh-CN'),
+          hasFeedback: !!t.aiSummary,
+          charCount: t.segments.reduce((n, s) => n + s.text.length, 0),
+        }));
     }
 
     default:

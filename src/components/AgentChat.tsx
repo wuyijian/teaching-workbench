@@ -6,17 +6,29 @@ import {
 import { useAgent, type AgentMessage, type ToolCallDisplay } from '../agent/useAgent';
 import type { StudentFile } from '../agent/tools';
 import type { Task, Settings } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 
-// ─── Quick Actions ─────────────────────────────────────────────────────────────
+// ─── Quick Actions（动态，根据实际数据生成） ────────────────────────────────────
 
-const QUICK_ACTIONS = [
-  { label: '生成所有待反馈的课堂反馈', prompt: '请帮我查看还有哪些学生未生成反馈，然后逐一读取转写内容、生成反馈并保存。' },
-  { label: '全班概况', prompt: '给我看一下全班整体情况，包括学生人数、总课次、哪些同学还有待处理的反馈。' },
-  { label: '分析课堂薄弱点', prompt: '搜索所有转写内容中关于"错误"、"不理解"、"再讲"的片段，总结出本阶段学生的共性薄弱知识点。' },
-  { label: '查看今天的任务', prompt: '列出今天所有已完成转写的任务，说明哪些已有反馈、哪些还没有。' },
-];
+function buildQuickActions(tasks: Task[]) {
+  const pendingCount = tasks.filter(t => t.status === 'done' && !t.aiSummary && t.segments.length > 0).length;
+  const todayCutoff = new Date(); todayCutoff.setHours(0, 0, 0, 0);
+  const todayCount  = tasks.filter(t => t.createdAt >= todayCutoff.getTime()).length;
+
+  return [
+    pendingCount > 0
+      ? { label: `一键生成 ${pendingCount} 条待反馈`, prompt: '请帮我查看还有哪些学生未生成反馈，然后逐一读取转写内容、生成反馈并保存。', urgent: true }
+      : null,
+    todayCount > 0
+      ? { label: `查看今天 ${todayCount} 条任务`, prompt: '用 get_recent_tasks 列出今天所有任务，说明哪些已有反馈、哪些还没有。', urgent: false }
+      : null,
+    { label: '全班概况', prompt: '调用 get_class_overview 给我看全班整体情况，包括学生人数、总课次、待处理反馈数，用表格展示。', urgent: false },
+    { label: '分析共性薄弱点', prompt: '搜索所有转写内容中关于"错误"、"不理解"、"再讲"、"不会"的片段，总结本阶段学生共性薄弱知识点。', urgent: false },
+    { label: '学生进步对比', prompt: '请列出所有学生，用 analyze_student_progress 逐一分析进步趋势，最后给出对比总结。', urgent: false },
+  ].filter(Boolean) as { label: string; prompt: string; urgent: boolean }[];
+}
 
 // ─── Tool Call Card ────────────────────────────────────────────────────────────
 
@@ -102,6 +114,23 @@ function ToolCard({ tc }: { tc: ToolCallDisplay }) {
 
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 
+function AssistantBubble({ content, streaming = false }: { content: string; streaming?: boolean }) {
+  return (
+    <div
+      className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed"
+      style={{ background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
+    >
+      <MarkdownRenderer content={content} />
+      {streaming && (
+        <span
+          className="inline-block w-0.5 h-3.5 ml-0.5 align-middle rounded-sm"
+          style={{ background: 'var(--accent)', animation: 'blink 0.8s step-end infinite' }}
+        />
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({
   msg,
   toolLog,
@@ -114,38 +143,17 @@ function MessageBubble({
   const isUser = msg.role === 'user';
   const hasToolCalls = !!(msg.tool_calls && msg.tool_calls.length > 0);
 
-  // Simple markdown-ish rendering: bold, line-breaks
-  const renderContent = (text: string) => {
-    const lines = text.split('\n');
-    return lines.map((line, i) => {
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      return (
-        <span key={i}>
-          {parts.map((p, j) =>
-            p.startsWith('**') && p.endsWith('**')
-              ? <strong key={j}>{p.slice(2, -2)}</strong>
-              : p,
-          )}
-          {i < lines.length - 1 && <br />}
-        </span>
-      );
-    });
-  };
-
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div
-          className="flex items-start gap-2 max-w-[80%]"
-          style={{ flexDirection: 'row-reverse' }}
-        >
+        <div className="flex items-start gap-2 max-w-[80%]" style={{ flexDirection: 'row-reverse' }}>
           <div className="flex items-center justify-center w-7 h-7 rounded-full shrink-0"
             style={{ background: 'var(--accent)', marginTop: 2 }}>
             <User size={13} className="text-white" />
           </div>
           <div
             className="rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm leading-relaxed"
-            style={{ background: 'var(--accent)', color: '#fff' }}
+            style={{ background: 'var(--accent)', color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
           >
             {msg.content}
           </div>
@@ -162,20 +170,27 @@ function MessageBubble({
         <Bot size={13} className="text-white" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col gap-2">
-        {/* tool call cards */}
         {hasToolCalls && msg.tool_calls!.map(tc => {
           const display = toolLog.find(t => t.id === tc.id);
           return display ? <ToolCard key={tc.id} tc={display} /> : null;
         })}
-        {/* text content */}
-        {msg.content && (
-          <div
-            className="rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed"
-            style={{ background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
-          >
-            {renderContent(msg.content)}
-          </div>
-        )}
+        {msg.content && <AssistantBubble content={msg.content} />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Streaming Bubble ──────────────────────────────────────────────────────────
+
+function StreamingBubble({ content }: { content: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex items-center justify-center w-7 h-7 rounded-full shrink-0"
+        style={{ background: 'linear-gradient(135deg,#4493f8,#7c4af8)', marginTop: 2 }}>
+        <Bot size={13} className="text-white" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <AssistantBubble content={content} streaming />
       </div>
     </div>
   );
@@ -207,45 +222,10 @@ function ThinkingDot() {
   );
 }
 
-// ─── Markdown Renderer (lightweight, no external dep) ─────────────────────────
-
-function MdLine({ line }: { line: string }) {
-  if (line.startsWith('## ')) {
-    return (
-      <div className="mt-3 mb-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-        {line.slice(3)}
-      </div>
-    );
-  }
-  if (line.startsWith('# ')) {
-    return (
-      <div className="text-sm font-bold mb-1" style={{ color: 'var(--text-1)' }}>
-        {line.slice(2)}
-      </div>
-    );
-  }
-  if (line.startsWith('- ')) {
-    return (
-      <div className="flex items-start gap-1.5 text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-        <span className="shrink-0 mt-1.5 w-1 h-1 rounded-full inline-block" style={{ background: 'var(--text-3)' }} />
-        <span>{line.slice(2)}</span>
-      </div>
-    );
-  }
-  if (line.startsWith('_') && line.endsWith('_')) {
-    return <div className="text-xs italic" style={{ color: 'var(--text-3)' }}>{line.slice(1, -1)}</div>;
-  }
-  if (line === '' || line === '---') return <div className="h-1" />;
-  return <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{line}</div>;
-}
+// ─── Simple Markdown (memory panel only) ──────────────────────────────────────
 
 function MarkdownView({ md }: { md: string }) {
-  const lines = md.split('\n');
-  return (
-    <div className="flex flex-col gap-0.5">
-      {lines.map((line, i) => <MdLine key={i} line={line} />)}
-    </div>
-  );
+  return <MarkdownRenderer content={md} />;
 }
 
 // ─── Student File Card ─────────────────────────────────────────────────────────
@@ -424,9 +404,11 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
   const subscription = useSubscription();
   const {
     messages, toolLog, globalMemory, studentFiles,
-    running, send, stop, clear,
+    running, streamingContent, send, stop, clear,
     deleteStudentFile,
   } = useAgent(tasks, onSaveFeedback, settings);
+
+  const quickActions = buildQuickActions(tasks);
 
   const [input, setInput] = useState('');
   const [showMemory, setShowMemory] = useState(false);
@@ -554,33 +536,38 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
               </div>
             )}
 
-            <div className="flex flex-col gap-2 w-full" style={{ maxWidth: 380 }}>
+            <div className="flex flex-col gap-2 w-full" style={{ maxWidth: 400 }}>
               <div className="text-xs mb-1" style={{ color: 'var(--text-3)' }}>快速开始</div>
-              {QUICK_ACTIONS.map(({ label, prompt }) => (
+              {quickActions.map(({ label, prompt, urgent }) => (
                 <button
                   key={label}
-                  onClick={() => { setInput(prompt); textareaRef.current?.focus(); }}
+                  onClick={() => {
+                    if (!hasApiKey) return;
+                    send(prompt);
+                  }}
                   disabled={!hasApiKey}
-                  className="text-left text-sm px-4 py-2.5 rounded-xl transition-all"
+                  className="text-left text-sm px-4 py-2.5 rounded-xl transition-all flex items-center gap-2"
                   style={{
-                    background: 'var(--bg-s2)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-2)',
+                    background: urgent ? '#2a1a0a' : 'var(--bg-s2)',
+                    border: `1px solid ${urgent ? '#5a3d0a' : 'var(--border)'}`,
+                    color: urgent ? 'var(--amber)' : 'var(--text-2)',
                     cursor: hasApiKey ? 'pointer' : 'not-allowed',
                     opacity: hasApiKey ? 1 : 0.4,
                   }}
                   onMouseEnter={e => {
                     if (hasApiKey) {
-                      (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)';
-                      (e.currentTarget as HTMLElement).style.color = 'var(--text-1)';
+                      (e.currentTarget as HTMLElement).style.borderColor = urgent ? 'var(--amber)' : 'var(--accent)';
+                      (e.currentTarget as HTMLElement).style.color = urgent ? 'var(--amber)' : 'var(--text-1)';
                     }
                   }}
                   onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
-                    (e.currentTarget as HTMLElement).style.color = 'var(--text-2)';
+                    (e.currentTarget as HTMLElement).style.borderColor = urgent ? '#5a3d0a' : 'var(--border)';
+                    (e.currentTarget as HTMLElement).style.color = urgent ? 'var(--amber)' : 'var(--text-2)';
                   }}
                 >
-                  {label}
+                  {urgent && <span style={{ fontSize: 14 }}>⚠️</span>}
+                  <span className="flex-1">{label}</span>
+                  <Send size={11} style={{ opacity: 0.4, flexShrink: 0 }} />
                 </button>
               ))}
             </div>
@@ -590,7 +577,10 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
             {messages.map((msg, i) => (
               <MessageBubble key={i} msg={msg} toolLog={toolLog} />
             ))}
-            {running && <ThinkingDot />}
+            {running && streamingContent
+              ? <StreamingBubble content={streamingContent} />
+              : running && <ThinkingDot />
+            }
           </>
         )}
       </div>
@@ -658,6 +648,10 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
         @keyframes bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40% { transform: translateY(-5px); opacity: 1; }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
         }
       `}</style>
 
