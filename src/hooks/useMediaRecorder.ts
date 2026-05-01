@@ -13,11 +13,14 @@ function buildFileName(mimeType: string): string {
 }
 
 function preferredMimeType(): string {
+  // 优先 OGG/Opus：讯飞企业版（office-api-ist-dx）支持 OGG，但不支持 WebM（failType=6）。
+  // Electron/Chrome/Firefox 均支持 audio/ogg;codecs=opus；
+  // iOS Safari 不支持 OGG，会落到 audio/mp4。
   const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
     'audio/ogg;codecs=opus',
     'audio/ogg',
+    'audio/webm;codecs=opus',
+    'audio/webm',
     // iOS Safari 14.3+ 只支持 mp4 容器
     'audio/mp4',
   ];
