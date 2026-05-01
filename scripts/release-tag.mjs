@@ -65,7 +65,8 @@ writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 run(`git add package.json`);
 run(`git commit -m "chore: release ${tag}"`);
 run(`git tag ${tag}`);
-run(`git push origin main --follow-tags`);
+run(`git push origin main`);
+run(`git push origin ${tag}`);
 
 console.log(`\n✅ ${tag} 已推送！`);
 console.log(`   GitHub Actions 正在构建，约 5-8 分钟后可在此下载：`);
