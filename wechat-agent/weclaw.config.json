@@ -1,0 +1,12 @@
+{
+  "_comment": "weclaw 配置文件，放到 ~/.weclaw/config.json",
+  "default_agent": "teaching-workbench",
+  "agents": {
+    "teaching-workbench": {
+      "type": "http",
+      "endpoint": "https://yixiaojian.top/wechat-agent/v1/chat/completions",
+      "api_key": "local-agent",
+      "model": "teaching-workbench"
+    }
+  }
+}
