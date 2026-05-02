@@ -48,6 +48,9 @@ app.get('/v1/models', (_req, res) => {
 // ── 主接口：OpenAI-compatible Chat Completions ────────────────────────────────
 app.post('/v1/chat/completions', async (req, res) => {
   const { messages, stream, user } = req.body;
+  const lastMsg = messages?.slice(-1)[0]?.content ?? '';
+  console.log(`[req] stream=${!!stream} user=${user ?? '-'} msg="${String(lastMsg).slice(0, 80)}"`);
+
 
   // 简单白名单鉴权
   if (ALLOWED_OPENIDS.length > 0 && user && !ALLOWED_OPENIDS.includes(user)) {
@@ -303,12 +306,15 @@ async function callKimi(userMsg, isSystemRole = false) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg },
       ],
-      temperature: 0.7,
       max_tokens: 2000,
     }),
   });
 
-  if (!resp.ok) throw new Error(`LLM API error: ${resp.status}`);
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    console.error(`[kimi] ${resp.status}:`, errBody.slice(0, 300));
+    throw new Error(`LLM API error: ${resp.status} ${errBody.slice(0, 100)}`);
+  }
   const json = await resp.json();
   return json.choices?.[0]?.message?.content || '无回复';
 }
