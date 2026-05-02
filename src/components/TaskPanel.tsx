@@ -109,8 +109,7 @@ function CreateForm({
   onSubmit: (names: string[], topic: string, prompt: string, file: File) => void;
   onCancel: () => void;
 }) {
-  const [studentNames, setStudentNames] = useState<string[]>([]);
-  const [nameInput, setNameInput] = useState('');
+  const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -118,20 +117,23 @@ function CreateForm({
   const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
   const [recordedDuration, setRecordedDuration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
+  const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const isElectron = !!window.electronAPI;
   const recorder = useMediaRecorder();
 
-  const addName = useCallback((raw: string) => {
-    const trimmed = raw.trim();
-    if (!trimmed) return;
-    setStudentNames(prev => prev.includes(trimmed) ? prev : [...prev, trimmed]);
-    setNameInput('');
+  const updateName = useCallback((idx: number, val: string) => {
+    setNameInputs(prev => prev.map((n, i) => i === idx ? val : n));
   }, []);
 
-  const removeName = useCallback((name: string) => {
-    setStudentNames(prev => prev.filter(n => n !== name));
+  const addNameField = useCallback(() => {
+    setNameInputs(prev => [...prev, '']);
+    // 下一帧聚焦新输入框
+    setTimeout(() => nameRefs.current[nameRefs.current.length - 1]?.focus(), 30);
+  }, []);
+
+  const removeNameField = useCallback((idx: number) => {
+    setNameInputs(prev => prev.length === 1 ? [''] : prev.filter((_, i) => i !== idx));
   }, []);
 
   const handleFile = useCallback((f: File) => setFile(f), []);
@@ -173,9 +175,7 @@ function CreateForm({
     }
   };
 
-  const effectiveNames = nameInput.trim()
-    ? [...studentNames, nameInput.trim()]
-    : studentNames;
+  const effectiveNames = nameInputs.map(n => n.trim()).filter(Boolean);
 
   const canSubmit = effectiveNames.length > 0 && file;
 
@@ -194,51 +194,54 @@ function CreateForm({
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Student names — tag input */}
+        {/* Student names — one input per student */}
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
             <User size={11} /> 学生姓名 <span className="text-red-400">*</span>
-            <span className="text-slate-600 text-[10px] ml-1">多人用 Enter 或逗号分隔</span>
           </label>
-
-          {/* Tag chips + input */}
-          <div
-            className="flex flex-wrap gap-1.5 bg-slate-800 border border-slate-600 focus-within:border-indigo-500 rounded-lg px-2.5 py-2 transition-colors cursor-text min-h-[38px]"
-            onClick={() => nameInputRef.current?.focus()}
-          >
-            {studentNames.map(name => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium shrink-0"
-                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}
-              >
-                {name}
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); removeName(name); }}
-                  className="opacity-60 hover:opacity-100 transition-opacity leading-none"
-                >
-                  <X size={10} />
-                </button>
-              </span>
+          <div className="space-y-2">
+            {nameInputs.map((val, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-600 w-4 shrink-0 text-right select-none">{idx + 1}</span>
+                <input
+                  ref={el => { nameRefs.current[idx] = el; }}
+                  type="text"
+                  value={val}
+                  onChange={e => updateName(idx, e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (val.trim()) addNameField();
+                    }
+                  }}
+                  placeholder={idx === 0 ? '学生姓名' : '学生姓名（可选）'}
+                  className="flex-1 bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
+                />
+                {nameInputs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeNameField(idx)}
+                    className="p-1.5 rounded-lg transition-colors shrink-0"
+                    style={{ color: 'var(--text-3)' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--red)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+                    title="删除"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
             ))}
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={nameInput}
-              onChange={e => setNameInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
-                  e.preventDefault();
-                  addName(nameInput);
-                } else if (e.key === 'Backspace' && !nameInput && studentNames.length > 0) {
-                  setStudentNames(prev => prev.slice(0, -1));
-                }
-              }}
-              onBlur={() => { if (nameInput.trim()) addName(nameInput); }}
-              placeholder={studentNames.length === 0 ? '输入姓名，Enter 添加' : '继续添加…'}
-              className="flex-1 min-w-[120px] bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
-            />
+            <button
+              type="button"
+              onClick={addNameField}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg transition-colors"
+              style={{ color: 'var(--text-3)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+            >
+              <Plus size={11} /> 添加学生
+            </button>
           </div>
         </div>
 
