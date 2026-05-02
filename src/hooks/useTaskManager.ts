@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Task, Settings } from '../types';
 import { getPlatformXfCredentials } from '../config/platformApi';
 import type { TranscriptSegment } from '../types';
-import { normalizeStudentKey } from '../utils/student';
+import { normalizeStudentKey, formatStudentNames } from '../utils/student';
 
 /** 守门 / 配额回调，由调用方（App）从 SubscriptionContext 注入 */
 export interface QuotaApi {
@@ -353,14 +353,18 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   }, [patch]);
 
   const createTask = useCallback((
-    studentName: string,
+    studentNames: string[],
     topic: string,
     prompt: string,
     file: File,
   ) => {
     const id = uid();
+    const names = studentNames.filter(n => n.trim());
     const newTask: Task = {
-      id, studentName, topic, prompt, engine: 'xfyun',
+      id,
+      studentName: formatStudentNames(names),
+      studentNames: names,
+      topic, prompt, engine: 'xfyun',
       audioFileName: file.name,
       audioFile: file,
       status: 'queued',
@@ -440,7 +444,10 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   const retryTask = useCallback((task: Task) => {
     if (!task.audioFile) return;
     deleteTask(task.id);
-    createTask(task.studentName, task.topic, task.prompt, task.audioFile);
+    const names = task.studentNames && task.studentNames.length > 0
+      ? task.studentNames
+      : [task.studentName];
+    createTask(names, task.topic, task.prompt, task.audioFile);
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {

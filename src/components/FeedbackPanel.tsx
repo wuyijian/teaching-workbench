@@ -7,6 +7,7 @@ import {
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
+import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -139,7 +140,7 @@ function TaskSelector({
         <FileText size={11} className="text-slate-400 shrink-0" />
         <span className="truncate">
           {selected
-            ? `${selected.studentName}${selected.topic ? ` · ${selected.topic}` : ''}`
+            ? `${formatStudentNames(getStudentNames(selected))}${selected.topic ? ` · ${selected.topic}` : ''}`
             : done.length ? '选择任务…' : '暂无已完成任务'}
         </span>
         {selectedGenerating && (
@@ -163,10 +164,10 @@ function TaskSelector({
                   className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-700/50 transition-colors text-left ${selectedId === task.id ? 'bg-indigo-500/10' : ''}`}
                 >
                   <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center shrink-0 text-xs text-slate-300 font-medium">
-                    {task.studentName.slice(0, 1)}
+                    {getStudentNames(task)[0]?.slice(0, 1) ?? '?'}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-slate-200 font-medium truncate">{task.studentName}</p>
+                    <p className="text-xs text-slate-200 font-medium truncate">{formatStudentNames(getStudentNames(task))}</p>
                     {task.topic && <p className="text-[10px] text-slate-500 truncate">{task.topic}</p>}
                     {task.aiSummary && !generating && <p className="text-[10px] text-emerald-500">已有保存反馈</p>}
                     {generating && (
@@ -336,7 +337,11 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const transcript = selectedTask.segments.map(s => s.text).join('');
     const date = new Date(selectedTask.createdAt);
     const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
-    const meta = [`日期：${dateStr}`, `学生姓名：${selectedTask.studentName}`, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
+    const taskNames = getStudentNames(selectedTask);
+    const namesLabel = taskNames.length > 1
+      ? `本次课学生（共 ${taskNames.length} 人）：${taskNames.join('、')}`
+      : `学生姓名：${taskNames[0] ?? selectedTask.studentName}`;
+    const meta = [`日期：${dateStr}`, namesLabel, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
     const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
     // 优先使用工作区选择的 prompt，fallback 到全局设置 / 内置默认
     const prompt = activePrompt.trim() || effectiveFeedbackPrompt(settings);
@@ -613,7 +618,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 <Sparkles size={22} style={{ color: 'var(--accent)' }} />
               </div>
               <p className="font-semibold" style={{ color: 'var(--text-1)' }}>
-                {selectedTask.studentName}
+                {formatStudentNames(getStudentNames(selectedTask))}
                 {selectedTask.topic && <span style={{ color: 'var(--text-3)', fontWeight: 400 }}> · {selectedTask.topic}</span>}
               </p>
               <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
@@ -661,7 +666,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} />
                 <span className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
-                  {selectedTask?.studentName}{selectedTask?.topic && ` · ${selectedTask.topic}`}
+                  {selectedTask ? formatStudentNames(getStudentNames(selectedTask)) : ''}
+                  {selectedTask?.topic && ` · ${selectedTask.topic}`}
                 </span>
                 {isGenerating && <Loader2 size={10} className="animate-spin" style={{ color: 'var(--accent)' }} />}
               </div>
@@ -751,9 +757,9 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       {/* 发给家长弹窗 */}
       {wechatOpen && selectedTask && (
         <WechatSendModal
-          studentName={selectedTask.studentName}
+          studentName={formatStudentNames(getStudentNames(selectedTask))}
           message={formatParentMessage({
-            studentName: selectedTask.studentName,
+            studentName: formatStudentNames(getStudentNames(selectedTask)),
             topic: selectedTask.topic,
             feedback,
           })}

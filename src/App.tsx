@@ -123,9 +123,9 @@ export default function App() {
   }, [settings, handleSaveSettings]);
 
   const handleCreateTask = useCallback((
-    name: string, topic: string, prompt: string, file: File,
+    names: string[], topic: string, prompt: string, file: File,
   ) => {
-    taskManager.createTask(name, topic, prompt, file);
+    taskManager.createTask(names, topic, prompt, file);
   }, [taskManager]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {

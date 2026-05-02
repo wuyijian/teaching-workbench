@@ -7,7 +7,7 @@ import {
   Mic, Pause, Play, Square,
 } from 'lucide-react';
 import type { Task } from '../types';
-import { normalizeStudentKey } from '../utils/student';
+import { normalizeStudentKey, getStudentNames, formatStudentNames } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
 import { useMediaRecorder } from '../hooks/useMediaRecorder';
@@ -81,7 +81,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (name: string, topic: string, prompt: string, file: File) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -106,10 +106,11 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (name: string, topic: string, prompt: string, file: File) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File) => void;
   onCancel: () => void;
 }) {
-  const [studentName, setStudentName] = useState('');
+  const [studentNames, setStudentNames] = useState<string[]>([]);
+  const [nameInput, setNameInput] = useState('');
   const [topic, setTopic] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -117,9 +118,21 @@ function CreateForm({
   const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
   const [recordedDuration, setRecordedDuration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const isElectron = !!window.electronAPI;
   const recorder = useMediaRecorder();
+
+  const addName = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    setStudentNames(prev => prev.includes(trimmed) ? prev : [...prev, trimmed]);
+    setNameInput('');
+  }, []);
+
+  const removeName = useCallback((name: string) => {
+    setStudentNames(prev => prev.filter(n => n !== name));
+  }, []);
 
   const handleFile = useCallback((f: File) => setFile(f), []);
 
@@ -160,11 +173,15 @@ function CreateForm({
     }
   };
 
-  const canSubmit = studentName.trim() && file;
+  const effectiveNames = nameInput.trim()
+    ? [...studentNames, nameInput.trim()]
+    : studentNames;
+
+  const canSubmit = effectiveNames.length > 0 && file;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(studentName.trim(), topic.trim(), FEEDBACK_PROMPT, file!);
+    onSubmit(effectiveNames, topic.trim(), FEEDBACK_PROMPT, file!);
   };
 
   return (
@@ -177,18 +194,52 @@ function CreateForm({
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Student name */}
+        {/* Student names — tag input */}
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
             <User size={11} /> 学生姓名 <span className="text-red-400">*</span>
+            <span className="text-slate-600 text-[10px] ml-1">多人用 Enter 或逗号分隔</span>
           </label>
-          <input
-            type="text"
-            value={studentName}
-            onChange={e => setStudentName(e.target.value)}
-            placeholder="输入学生姓名"
-            className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
-          />
+
+          {/* Tag chips + input */}
+          <div
+            className="flex flex-wrap gap-1.5 bg-slate-800 border border-slate-600 focus-within:border-indigo-500 rounded-lg px-2.5 py-2 transition-colors cursor-text min-h-[38px]"
+            onClick={() => nameInputRef.current?.focus()}
+          >
+            {studentNames.map(name => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium shrink-0"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}
+              >
+                {name}
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); removeName(name); }}
+                  className="opacity-60 hover:opacity-100 transition-opacity leading-none"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
+                  e.preventDefault();
+                  addName(nameInput);
+                } else if (e.key === 'Backspace' && !nameInput && studentNames.length > 0) {
+                  setStudentNames(prev => prev.slice(0, -1));
+                }
+              }}
+              onBlur={() => { if (nameInput.trim()) addName(nameInput); }}
+              placeholder={studentNames.length === 0 ? '输入姓名，Enter 添加' : '继续添加…'}
+              className="flex-1 min-w-[120px] bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
+            />
+          </div>
         </div>
 
         {/* Topic */}
@@ -433,7 +484,8 @@ function TaskCard({
   const meta = STATUS_META[task.status];
   const isActive = task.status === 'uploading' || task.status === 'transcribing';
   const isQueued = task.status === 'queued';
-  const initial = task.studentName.slice(0, 1);
+  const names = getStudentNames(task);
+  const isGroup = names.length > 1;
 
   return (
     <div
@@ -442,28 +494,49 @@ function TaskCard({
       style={{
         padding: '10px 12px',
         border: `1px solid ${isSelected ? '#388bfd60' : 'var(--border)'}`,
-        background: isSelected ? 'var(--accent-dim)' : isArchived ? 'var(--bg-s1)' : 'var(--bg-s1)',
+        background: isSelected ? 'var(--accent-dim)' : 'var(--bg-s1)',
         boxShadow: isSelected ? '0 0 0 1px #388bfd30' : undefined,
         opacity: isArchived ? 0.7 : 1,
       }}
     >
       <div className="flex items-start gap-2.5">
-        {/* Avatar */}
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold shrink-0"
-          style={{
-            background: isSelected ? '#388bfd30' : 'var(--bg-s3)',
-            color: isSelected ? 'var(--accent)' : 'var(--text-2)',
-            border: `1px solid ${isSelected ? '#388bfd40' : 'var(--border)'}`,
-          }}>
-          {initial}
-        </div>
+        {/* Avatar — 单人显示首字，多人叠加显示 */}
+        {isGroup ? (
+          <div className="relative w-8 h-8 shrink-0">
+            {names.slice(0, 2).map((n, i) => (
+              <div key={n}
+                className="absolute w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-semibold"
+                style={{
+                  top: i === 0 ? 0 : 'auto', bottom: i === 0 ? 'auto' : 0,
+                  left: i === 0 ? 0 : 'auto', right: i === 0 ? 'auto' : 0,
+                  background: isSelected ? '#388bfd30' : 'var(--bg-s3)',
+                  color: isSelected ? 'var(--accent)' : 'var(--text-2)',
+                  border: `1px solid ${isSelected ? '#388bfd40' : 'var(--border)'}`,
+                  zIndex: 2 - i,
+                }}>
+                {n.slice(0, 1)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold shrink-0"
+            style={{
+              background: isSelected ? '#388bfd30' : 'var(--bg-s3)',
+              color: isSelected ? 'var(--accent)' : 'var(--text-2)',
+              border: `1px solid ${isSelected ? '#388bfd40' : 'var(--border)'}`,
+            }}>
+            {names[0]?.slice(0, 1) ?? '?'}
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
-                {task.studentName}
+                {isGroup
+                  ? names.slice(0, 2).join('、') + (names.length > 2 ? ` +${names.length - 2}` : '')
+                  : names[0] ?? task.studentName}
               </span>
               {task.topic && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
@@ -563,6 +636,7 @@ function TaskDetail({
   onUnarchive: () => void;
   onExport: () => void;
 }) {
+  const names = getStudentNames(task);
   const [copied, setCopied] = useState(false);
   const fullText = task.segments.map(s => `${formatSeg(s.timestamp)} ${s.text}`).join('\n');
 
@@ -610,9 +684,21 @@ function TaskDetail({
           </button>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>
-                {task.studentName}
-              </span>
+              {names.length > 1 ? (
+                <div className="flex items-center gap-1 flex-wrap">
+                  {names.map(n => (
+                    <span key={n}
+                      className="text-xs px-2 py-0.5 rounded-md font-medium"
+                      style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}>
+                      {n}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>
+                  {names[0] ?? task.studentName}
+                </span>
+              )}
               {task.topic && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                   style={{ background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
@@ -622,7 +708,7 @@ function TaskDetail({
               {studentArchived && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5"
                   style={{ background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
-                  <Archive size={9} />该同学已归档
+                  <Archive size={9} />{names.length > 1 ? '已归档' : '该同学已归档'}
                 </span>
               )}
             </div>
@@ -753,9 +839,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    name: string, topic: string, prompt: string, file: File,
+    names: string[], topic: string, prompt: string, file: File,
   ) => {
-    onCreateTask(name, topic, prompt, file);
+    onCreateTask(names, topic, prompt, file);
     setView('list');
   }, [onCreateTask]);
 

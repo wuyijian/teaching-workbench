@@ -41,7 +41,10 @@ export type TaskStatus = 'queued' | 'uploading' | 'transcribing' | 'done' | 'err
 
 export interface Task {
   id: string;
+  /** 兼容字段：单学生时等于学生姓名，多学生时为顿号拼接（仅用于旧数据展示） */
   studentName: string;
+  /** 实际学生列表，新建任务时写入；旧数据缺省则取 [studentName] */
+  studentNames?: string[];
   topic: string;
   prompt: string;
   engine: TranscribeEngine;
