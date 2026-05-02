@@ -7,6 +7,7 @@ import {
 } from './tools';
 import { effectiveFeedbackPrompt } from '../components/FeedbackPanel';
 import { resolveApiBase } from '../config/urls';
+import { withRetry, isTransient } from '../utils/retry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -157,97 +158,113 @@ async function callLLMStreaming(
   signal: AbortSignal,
   onContentChunk: (chunk: string) => void,
 ): Promise<StreamResult> {
-  const resp = await fetch(`${apiBase}/chat/completions`, {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools,
-      tool_choice: 'auto',
-      stream: true,
-    }),
-  });
+  return withRetry(
+    async () => {
+      const resp = await fetch(`${apiBase}/chat/completions`, {
+        method: 'POST',
+        signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          tools,
+          tool_choice: 'auto',
+          stream: true,
+        }),
+      });
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`API 错误 ${resp.status}: ${text}`);
-  }
-
-  let content = '';
-  // tool_call fragments keyed by index
-  const tcMap = new Map<number, { id: string; name: string; args: string }>();
-
-  const processLine = (line: string) => {
-    if (!line.startsWith('data: ')) return;
-    const data = line.slice(6).trim();
-    if (data === '[DONE]') return;
-    let parsed: unknown;
-    try { parsed = JSON.parse(data); } catch { return; }
-    const p = parsed as {
-      choices?: Array<{
-        delta?: {
-          content?: string;
-          tool_calls?: Array<{
-            index: number; id?: string;
-            function?: { name?: string; arguments?: string };
-          }>;
-        };
-      }>;
-    };
-    const delta = p.choices?.[0]?.delta;
-    if (!delta) return;
-
-    if (typeof delta.content === 'string' && delta.content) {
-      content += delta.content;
-      onContentChunk(delta.content);
-    }
-    if (delta.tool_calls) {
-      for (const tc of delta.tool_calls) {
-        const idx = tc.index;
-        if (!tcMap.has(idx)) tcMap.set(idx, { id: '', name: '', args: '' });
-        const entry = tcMap.get(idx)!;
-        if (tc.id)                    entry.id   += tc.id;
-        if (tc.function?.name)        entry.name += tc.function.name;
-        if (tc.function?.arguments)   entry.args += tc.function.arguments;
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`API 错误 ${resp.status}: ${text}`);
       }
+
+      return resp;
+    },
+    {
+      maxAttempts: 3,
+      baseDelayMs: 1500,
+      shouldRetry: (err) => {
+        if (signal.aborted) return false;
+        return isTransient(err);
+      },
+      onRetry: (err, n, delay) =>
+        console.warn(`[kimi] 第 ${n} 次重试（${delay}ms）:`, err.message),
+    },
+  ).then(async (resp) => {
+    let content = '';
+    // tool_call fragments keyed by index
+    const tcMap = new Map<number, { id: string; name: string; args: string }>();
+
+    const processLine = (line: string) => {
+      if (!line.startsWith('data: ')) return;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      let parsed: unknown;
+      try { parsed = JSON.parse(data); } catch { return; }
+      const p = parsed as {
+        choices?: Array<{
+          delta?: {
+            content?: string;
+            tool_calls?: Array<{
+              index: number; id?: string;
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+        }>;
+      };
+      const delta = p.choices?.[0]?.delta;
+      if (!delta) return;
+
+      if (typeof delta.content === 'string' && delta.content) {
+        content += delta.content;
+        onContentChunk(delta.content);
+      }
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index;
+          if (!tcMap.has(idx)) tcMap.set(idx, { id: '', name: '', args: '' });
+          const entry = tcMap.get(idx)!;
+          if (tc.id)                  entry.id   += tc.id;
+          if (tc.function?.name)      entry.name += tc.function.name;
+          if (tc.function?.arguments) entry.args += tc.function.arguments;
+        }
+      }
+    };
+
+    // Safari 14 compat: resp.body may be null → fall back to text()
+    if (!resp.body) {
+      const text = await resp.text();
+      for (const line of text.split('\n')) processLine(line);
+    } else {
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value);
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) processLine(line);
+      }
+      if (buf) processLine(buf);
     }
-  };
 
-  // Safari 14 compat: resp.body may be null → fall back to text()
-  if (!resp.body) {
-    const text = await resp.text();
-    for (const line of text.split('\n')) processLine(line);
-  } else {
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value);
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) processLine(line);
-    }
-    if (buf) processLine(buf);
-  }
+    const tool_calls = tcMap.size > 0
+      ? Array.from(tcMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([, tc]) => ({
+            id: tc.id || `tc-${Math.random().toString(36).slice(2)}`,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.args },
+          }))
+      : undefined;
 
-  const tool_calls = tcMap.size > 0
-    ? Array.from(tcMap.entries())
-        .sort(([a], [b]) => a - b)
-        .map(([, tc]) => ({
-          id: tc.id || `tc-${Math.random().toString(36).slice(2)}`,
-          type: 'function' as const,
-          function: { name: tc.name, arguments: tc.args },
-        }))
-    : undefined;
-
-  return { content: content || null, tool_calls };
+    return { content: content || null, tool_calls };
+  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -115,6 +115,7 @@ try {
 }
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
 import { xfyunProxyBase } from '../config/urls';
+import { withRetry, isTransient } from '../utils/retry';
 
 function uid() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -165,29 +166,51 @@ async function transcribeXfyun(
   }
 
   onProgress(10);
-  const upResp = await fetch(`${xfyunProxyBase}/v2/upload?${query}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      signature: signatureUp,
+
+  // ── 1. 上传（网络抖动 / 5xx 时最多重试 3 次）──
+  const upData = await withRetry(
+    async () => {
+      const upResp = await fetch(`${xfyunProxyBase}/v2/upload?${query}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          signature: signatureUp,
+        },
+        body: file,
+      });
+      // Nginx 的 413/408/502 等错误页是 HTML，不能直接 .json()
+      if (!upResp.ok) {
+        const msg = upResp.status === 413 ? '：文件超过服务器限制（500MB）'
+          : upResp.status === 408 ? '：上传超时，请在 WiFi 环境下重试'
+          : '';
+        throw new Error(`上传请求失败（HTTP ${upResp.status}）${msg}`);
+      }
+      const data = await upResp.json() as { code: string; descInfo?: string; content: { orderId: string } };
+      if (data.code !== '000000') throw new Error(`讯飞上传失败：${data.descInfo ?? data.code}`);
+      return data;
     },
-    body: file,
-  });
+    {
+      maxAttempts: 3,
+      baseDelayMs: 2000,
+      shouldRetry: (err) => {
+        if (shouldStop()) return false;
+        // 业务层报错（讯飞 code 非 000000）不重试；网络 / 5xx 重试
+        if (err.message.startsWith('讯飞上传失败')) return false;
+        return isTransient(err);
+      },
+      onRetry: (err, n, delay) =>
+        console.warn(`[xfyun] 上传第 ${n} 次重试（${delay}ms）:`, err.message),
+    },
+  );
+  const orderId = upData.content.orderId;
 
-  // 先检查 HTTP 状态，Nginx 的 413/408/502 等错误页是 HTML，不能直接 .json()
-  if (!upResp.ok) {
-    throw new Error(`上传请求失败（HTTP ${upResp.status}）${upResp.status === 413 ? '：文件超过服务器限制（500MB）' : upResp.status === 408 ? '：上传超时，请在 WiFi 环境下重试' : ''}`);
-  }
-
-  const upData = await upResp.json();
-  if (upData.code !== '000000') throw new Error(`讯飞上传失败：${upData.descInfo ?? upData.code}`);
-  const orderId = upData.content.orderId as string;
-
-  // ── 2. 轮询（最长 3 小时，间隔自适应）──
+  // ── 2. 轮询（最长 3 小时，间隔自适应；单次 fetch 网络失败最多容忍 3 次）──
   onProgress(20);
   const pollStart = Date.now();
   const MAX_WAIT_MS = 3 * 60 * 60 * 1000;
   let estimateMs: number | null = null;
+  let pollFailCount = 0;
+  const MAX_POLL_FAIL = 3;
 
   while (true) {
     if (shouldStop()) throw new Error('已取消');
@@ -210,15 +233,26 @@ async function transcribeXfyun(
     const pq = Object.entries(pollParams)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&');
-    const pResp = await fetch(`${xfyunProxyBase}/v2/getResult?${pq}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        signature: signaturePoll,
-      },
-      body: '{}',
-    });
-    const pData = await pResp.json();
+
+    let pData: { code: string; descInfo?: string; content: { orderInfo: { status: number; failType?: number }; orderResult: unknown; taskEstimateTime?: number } };
+    try {
+      const pResp = await fetch(`${xfyunProxyBase}/v2/getResult?${pq}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', signature: signaturePoll },
+        body: '{}',
+      });
+      if (!pResp.ok) throw new Error(`讯飞轮询 HTTP ${pResp.status}`);
+      pData = await pResp.json() as typeof pData;
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (isTransient(e) && ++pollFailCount <= MAX_POLL_FAIL) {
+        console.warn(`[xfyun] 轮询第 ${pollFailCount} 次失败，继续等待:`, e.message);
+        continue; // 下一次循环自然重试
+      }
+      throw e;
+    }
+    pollFailCount = 0; // 成功后重置
+
     if (pData.code !== '000000') throw new Error(`讯飞查询失败：${pData.descInfo ?? pData.code}`);
     const { orderInfo, orderResult, taskEstimateTime } = pData.content;
     if (taskEstimateTime) estimateMs = taskEstimateTime;
