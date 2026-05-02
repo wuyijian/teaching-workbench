@@ -7,7 +7,7 @@ import {
   Mic, Pause, Play, Square,
 } from 'lucide-react';
 import type { Task } from '../types';
-import { normalizeStudentKey, getStudentNames, formatStudentNames } from '../utils/student';
+import { normalizeStudentKey, getStudentNames } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
 import { useMediaRecorder } from '../hooks/useMediaRecorder';

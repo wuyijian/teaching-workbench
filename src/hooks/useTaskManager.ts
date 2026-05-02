@@ -259,7 +259,7 @@ async function transcribeXfyun(
     const elapsedNow = Date.now() - pollStart;
     const est = estimateMs ?? 60_000;
     onProgress(Math.min(95, Math.round((elapsedNow / est) * 75) + 20));
-    if (orderInfo.status === 4) { onProgress(100); return parseXfyunResult(orderResult); }
+    if (orderInfo.status === 4) { onProgress(100); return parseXfyunResult(orderResult as string); }
     if (orderInfo.status === -1) throw new Error(`讯飞转写失败（failType=${orderInfo.failType}），请检查音频格式`);
   }
 }
