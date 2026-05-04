@@ -69,6 +69,11 @@ jobs:
       VITE_LLM_BASE_URL: /moonshot-api/v1
       VITE_LLM_MODEL: ${{ secrets.VITE_LLM_MODEL || 'kimi-k2.5' }}
       VITE_WECHAT_APP_ID: ${{ secrets.VITE_WECHAT_APP_ID }}
+      # 火山引擎豆包大模型录音转写（可选，配置后自动启用引擎切换）
+      VITE_VOLCANO_API_KEY: ${{ secrets.VITE_VOLCANO_API_KEY }}
+      VITE_VOLCANO_APP_ID: ${{ secrets.VITE_VOLCANO_APP_ID }}
+      VITE_VOLCANO_ACCESS_KEY: ${{ secrets.VITE_VOLCANO_ACCESS_KEY }}
+      VITE_VOLCANO_PROXY_BASE: /volcano-api
 
     steps:
       # 1. 拉代码
@@ -101,6 +106,10 @@ jobs:
           VITE_LLM_BASE_URL=${VITE_LLM_BASE_URL}
           VITE_LLM_MODEL=${VITE_LLM_MODEL}
           VITE_WECHAT_APP_ID=${VITE_WECHAT_APP_ID}
+          VITE_VOLCANO_API_KEY=${VITE_VOLCANO_API_KEY}
+          VITE_VOLCANO_APP_ID=${VITE_VOLCANO_APP_ID}
+          VITE_VOLCANO_ACCESS_KEY=${VITE_VOLCANO_ACCESS_KEY}
+          VITE_VOLCANO_PROXY_BASE=${VITE_VOLCANO_PROXY_BASE}
           EOF
 
       # 5a. 诊断：打印 Secrets 是否注入（只看长度，不泄露内容）
@@ -116,6 +125,8 @@ jobs:
           printf 'VITE_LLM_BASE_URL          val=%s\n' "${VITE_LLM_BASE_URL}"
           printf 'VITE_LLM_MODEL             val=%s\n' "${VITE_LLM_MODEL}"
           printf 'VITE_WECHAT_APP_ID         len=%s\n' "${#VITE_WECHAT_APP_ID}"
+          printf 'VITE_VOLCANO_API_KEY       len=%s\n' "${#VITE_VOLCANO_API_KEY}"
+          printf 'VITE_VOLCANO_PROXY_BASE    val=%s\n' "${VITE_VOLCANO_PROXY_BASE}"
           echo "─────────────────────────────────────────────────────"
 
       # 5b-1. TSC 类型检查（强制，失败则终止部署）

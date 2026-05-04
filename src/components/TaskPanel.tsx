@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../types';
 import { normalizeStudentKey, getStudentNames } from '../utils/student';
+import { hasPlatformVolcano } from '../config/platformApi';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
 import { useMediaRecorder } from '../hooks/useMediaRecorder';
@@ -81,7 +82,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (names: string[], topic: string, prompt: string, file: File) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine']) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -106,11 +107,13 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (names: string[], topic: string, prompt: string, file: File) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine']) => void;
   onCancel: () => void;
 }) {
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
+  const [engine, setEngine] = useState<Task['engine']>('xfyun');
+  const hasVolcano = hasPlatformVolcano();
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
@@ -181,7 +184,7 @@ function CreateForm({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(effectiveNames, topic.trim(), FEEDBACK_PROMPT, file!);
+    onSubmit(effectiveNames, topic.trim(), FEEDBACK_PROMPT, file!, engine);
   };
 
   return (
@@ -258,6 +261,35 @@ function CreateForm({
             className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
           />
         </div>
+
+        {/* Engine selector — only shown when both engines are available */}
+        {hasVolcano && (
+          <div>
+            <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
+              转写引擎
+            </label>
+            <div className="flex gap-0.5 p-0.5 rounded-lg"
+              style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
+              {([
+                { value: 'xfyun',   label: '讯飞大模型',  desc: '稳定·支持方言' },
+                { value: 'volcano', label: '豆包大模型',   desc: '精准·快速' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEngine(opt.value)}
+                  className="flex-1 flex flex-col items-center py-1.5 rounded-md transition-all"
+                  style={engine === opt.value
+                    ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+                    : { color: 'var(--text-3)', border: '1px solid transparent' }}
+                >
+                  <span className="text-xs font-medium">{opt.label}</span>
+                  <span className="text-[10px] opacity-70">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Audio source */}
         <div>
@@ -589,7 +621,7 @@ function TaskCard({
               </span>
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
-              讯飞大模型
+              {task.engine === 'volcano' ? '豆包大模型' : '讯飞大模型'}
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
               {formatTime(task.createdAt)}
@@ -842,9 +874,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    names: string[], topic: string, prompt: string, file: File,
+    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'],
   ) => {
-    onCreateTask(names, topic, prompt, file);
+    onCreateTask(names, topic, prompt, file, eng);
     setView('list');
   }, [onCreateTask]);
 

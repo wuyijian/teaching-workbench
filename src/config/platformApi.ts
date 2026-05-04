@@ -19,6 +19,7 @@ const PROXY_TO_DIRECT: Record<string, string> = {
   '/moonshot-api': 'https://api.moonshot.cn',
   '/openai-api':   'https://api.openai.com',
   '/xfyun-api':    'https://office-api-ist-dx.iflyaisol.com',
+  '/volcano-api':  'https://openspeech.bytedance.com',
 };
 
 export function getPlatformLlmBaseUrl(): string {
@@ -52,6 +53,18 @@ export function getPlatformXfCredentials() {
   };
 }
 
+/**
+ * 火山引擎豆包大模型录音转写
+ * 新控制台只需 apiKey；旧控制台需 appId + accessKey
+ */
+export function getPlatformVolcanoCredentials() {
+  return {
+    apiKey:    trim(import.meta.env.VITE_VOLCANO_API_KEY),
+    appId:     trim(import.meta.env.VITE_VOLCANO_APP_ID),
+    accessKey: trim(import.meta.env.VITE_VOLCANO_ACCESS_KEY),
+  };
+}
+
 export function hasPlatformLlm(): boolean {
   return !!getPlatformLlmApiKey();
 }
@@ -59,6 +72,11 @@ export function hasPlatformLlm(): boolean {
 export function hasPlatformXf(): boolean {
   const x = getPlatformXfCredentials();
   return !!(x.xfAppId && x.xfAccessKeyId && x.xfAccessKeySecret);
+}
+
+export function hasPlatformVolcano(): boolean {
+  const v = getPlatformVolcanoCredentials();
+  return !!(v.apiKey || (v.appId && v.accessKey));
 }
 
 /**

@@ -35,7 +35,7 @@ export interface Settings {
   feedbackPrompt?: string;
 }
 
-export type TranscribeEngine = 'xfyun';
+export type TranscribeEngine = 'xfyun' | 'volcano';
 
 export type TaskStatus = 'queued' | 'uploading' | 'transcribing' | 'done' | 'error';
 
