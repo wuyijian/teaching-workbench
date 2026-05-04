@@ -147,6 +147,7 @@ function buildContextHint(tasks: Task[]): string {
 interface StreamResult {
   content: string | null;
   tool_calls: ToolCall[] | undefined;
+  reasoning_content: string | undefined;
 }
 
 async function callLLMStreaming(
@@ -195,6 +196,7 @@ async function callLLMStreaming(
     },
   ).then(async (resp) => {
     let content = '';
+    let reasoningContent = '';
     // tool_call fragments keyed by index
     const tcMap = new Map<number, { id: string; name: string; args: string }>();
 
@@ -208,6 +210,7 @@ async function callLLMStreaming(
         choices?: Array<{
           delta?: {
             content?: string;
+            reasoning_content?: string;
             tool_calls?: Array<{
               index: number; id?: string;
               function?: { name?: string; arguments?: string };
@@ -218,6 +221,9 @@ async function callLLMStreaming(
       const delta = p.choices?.[0]?.delta;
       if (!delta) return;
 
+      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+        reasoningContent += delta.reasoning_content;
+      }
       if (typeof delta.content === 'string' && delta.content) {
         content += delta.content;
         onContentChunk(delta.content);
@@ -263,7 +269,7 @@ async function callLLMStreaming(
           }))
       : undefined;
 
-    return { content: content || null, tool_calls };
+    return { content: content || null, tool_calls, reasoning_content: reasoningContent || undefined };
   });
 }
 
@@ -387,7 +393,7 @@ export function useAgent(
 
           // 流式调用：content 块实时推送，tool_calls 完整收集后执行
           let streamedContent = '';
-          const { content: rawContent, tool_calls: rawToolCalls } = await callLLMStreaming(
+          const { content: rawContent, tool_calls: rawToolCalls, reasoning_content: rawReasoning } = await callLLMStreaming(
             history,
             TOOL_DEFINITIONS,
             base,
@@ -407,6 +413,7 @@ export function useAgent(
             role: 'assistant',
             content: rawContent,
             tool_calls: rawToolCalls,
+            ...(rawReasoning ? { reasoning_content: rawReasoning } : {}),
           };
           history = [...history, assistantMsg];
 
