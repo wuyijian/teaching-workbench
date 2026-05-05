@@ -24,6 +24,12 @@ const proxy = {
     changeOrigin: true,
     rewrite: (path: string) => path.replace(/^\/moonshot-api/, ''),
   },
+  /** 火山引擎豆包语音大模型 */
+  '/volcano-api': {
+    target: 'https://openspeech.bytedance.com',
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/volcano-api/, ''),
+  },
 } as const
 
 export default defineConfig({

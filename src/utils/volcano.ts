@@ -1,13 +1,11 @@
 /**
- * 火山引擎「豆包语音大模型」录音文件转写工具
+ * 火山引擎「豆包语音大模型 - 录音文件识别（标准版）」转写工具
  *
- * 两种 API 路径：
- *  1. Flash（极速版）：同步，≤100MB，一次请求直接返回结果，适合 ≤20MB 推荐
- *     POST /api/v3/auc/bigmodel/recognize/flash
- *
- *  2. Async（标准版）：异步 submit + poll，≤ 2h / 100MB，大文件首选
- *     POST /api/v3/auc/bigmodel/submit
- *     POST /api/v3/auc/bigmodel/query
+ * 资源 ID：volc.bigasr.auc
+ * API：异步 submit + poll
+ *   POST /api/v3/auc/bigmodel/submit
+ *   POST /api/v3/auc/bigmodel/query
+ * 限制：≤ 2h / 100MB
  *
  * 鉴权（新控制台）：Header X-Api-Key
  * 鉴权（旧控制台）：Header X-Api-App-Key + X-Api-Access-Key
@@ -32,7 +30,7 @@ export function buildVolcanoHeaders(
 ): Record<string, string> {
   const base: Record<string, string> = {
     'Content-Type':      'application/json',
-    'X-Api-Resource-Id': 'volc.bigasr.auc_turbo',
+    'X-Api-Resource-Id': 'volc.bigasr.auc',
     'X-Api-Request-Id':  requestId,
     'X-Api-Sequence':    '-1',
   };
@@ -61,6 +59,8 @@ export interface VolcanoRequestBody {
     enable_ddc?: boolean;
     /** 说话人分离（多人场景） */
     enable_speaker_info?: boolean;
+    /** 必须开启才会返回分句的 utterances 列表 */
+    show_utterances?: boolean;
     language?: string;
   };
   /** 异步版：回调 URL（可选，不填则纯轮询） */
@@ -82,6 +82,7 @@ export function buildVolcanoBody(
       enable_punc: true,
       enable_ddc: true,
       enable_speaker_info: enableSpeakerInfo,
+      show_utterances: true,
       language: language.startsWith('zh') ? 'zh-CN' : language,
     },
   };
@@ -118,8 +119,8 @@ interface VolcanoFlashResponse {
 }
 
 interface VolcanoAsyncResponse {
-  id?: string;
-  resp?: {
+  audio_info?: { duration?: number };
+  result?: {
     text?: string;
     utterances?: VolcanoUtterance[];
   };
@@ -145,9 +146,9 @@ export function parseVolcanoFlashResult(body: VolcanoFlashResponse): TranscriptS
 }
 
 export function parseVolcanoAsyncResult(body: VolcanoAsyncResponse): TranscriptSegment[] {
-  const utterances = body.resp?.utterances;
+  const utterances = body.result?.utterances;
   if (!utterances || utterances.length === 0) {
-    const text = body.resp?.text?.trim();
+    const text = body.result?.text?.trim();
     if (!text) return [];
     return [{ id: 'vlc-0', text, timestamp: 0, isFinal: true }];
   }

@@ -112,8 +112,8 @@ function CreateForm({
 }) {
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
-  const [engine, setEngine] = useState<Task['engine']>('xfyun');
   const hasVolcano = hasPlatformVolcano();
+  const [engine, setEngine] = useState<Task['engine']>(hasVolcano ? 'volcano' : 'xfyun');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
@@ -271,8 +271,8 @@ function CreateForm({
             <div className="flex gap-0.5 p-0.5 rounded-lg"
               style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
               {([
+                { value: 'volcano', label: '豆包大模型',  desc: '精准·快速' },
                 { value: 'xfyun',   label: '讯飞大模型',  desc: '稳定·支持方言' },
-                { value: 'volcano', label: '豆包大模型',   desc: '精准·快速' },
               ] as const).map(opt => (
                 <button
                   key={opt.value}

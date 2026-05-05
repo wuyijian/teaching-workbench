@@ -123,7 +123,7 @@ export default function App() {
   }, [settings, handleSaveSettings]);
 
   const handleCreateTask = useCallback((
-    names: string[], topic: string, prompt: string, file: File, engine: Parameters<typeof taskManager.createTask>[4] = 'xfyun',
+    names: string[], topic: string, prompt: string, file: File, engine: Parameters<typeof taskManager.createTask>[4] = 'volcano',
   ) => {
     taskManager.createTask(names, topic, prompt, file, engine);
   }, [taskManager]);
