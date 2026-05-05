@@ -19,10 +19,15 @@ echo "[5] /etc/nginx/sites-available:"
 ls -la /etc/nginx/sites-available/ 2>/dev/null || true
 echo "===================================="
 
-# 在所有可能的 nginx 配置目录里找包含域名的文件
-CONF=$(grep -lrE "server_name[^;]*yixiaojian\.top" \
-  /etc/nginx/ \
-  2>/dev/null | head -n1)
+# 在所有 .conf 文件（排除 .bak.* 备份）里找含域名的，优先 conf.d/teaching-workbench.conf
+PRIMARY=/etc/nginx/conf.d/teaching-workbench.conf
+if [ -f "$PRIMARY" ] && grep -q "yixiaojian.top" "$PRIMARY"; then
+  CONF="$PRIMARY"
+else
+  CONF=$(find /etc/nginx -type f -name '*.conf' \
+    -exec grep -lE "server_name[^;]*yixiaojian\.top" {} + 2>/dev/null \
+    | grep -v '\.bak' | head -n1)
+fi
 
 if [ -z "$CONF" ]; then
   echo "未找到含 yixiaojian.top 的 nginx server 配置文件，跳过"
