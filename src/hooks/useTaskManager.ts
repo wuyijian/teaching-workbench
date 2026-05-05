@@ -129,7 +129,7 @@ function uid() {
 
 /** 讯飞企业版（office-api-ist-dx）language：autodialect / autominor */
 function mapLanguage(lang: string) {
-  return lang.startsWith('en') ? 'autominor' : 'autodialect';
+  return lang.startsWith('en') ? 'en_us' : 'zh_cn';
 }
 
 // ── 讯飞企业版「办公录音转写」office-api-ist-dx.iflyaisol.com/v2 ──────────────
