@@ -150,22 +150,19 @@ async function transcribeXfyun(
   // ── 1. 上传 ──
   const dateTimeUp = getDateTime();
   const signatureRandom = randomStr(16);
-  // 签名只包含 4 个鉴权字段（按文档要求），业务参数仅放 query string
-  const authParams: Record<string, string> = {
+  const uploadParams: Record<string, string> = {
     appId: xfAppId,
     accessKeyId: xfAccessKeyId,
     dateTime: dateTimeUp,
     signatureRandom,
-  };
-  const businessParams: Record<string, string> = {
     fileSize: String(file.size),
     fileName: file.name,
     language: mapLanguage(language),
     durationCheckDisable: 'true',
     pd: 'edu',
   };
-  const signatureUp = await buildSignature(authParams, xfAccessKeySecret);
-  const query = Object.entries({ ...authParams, ...businessParams })
+  const signatureUp = await buildSignature(uploadParams, xfAccessKeySecret);
+  const query = Object.entries(uploadParams)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&');
 
@@ -231,17 +228,15 @@ async function transcribeXfyun(
     if (shouldStop()) throw new Error('已取消');
 
     const dateTimePoll = getDateTime();
-    const pollAuthParams: Record<string, string> = {
+    const pollParams: Record<string, string> = {
       accessKeyId: xfAccessKeyId,
       dateTime: dateTimePoll,
       signatureRandom,
-    };
-    const pollBizParams: Record<string, string> = {
       orderId,
       resultType: 'transfer',
     };
-    const signaturePoll = await buildSignature(pollAuthParams, xfAccessKeySecret);
-    const pq = Object.entries({ ...pollAuthParams, ...pollBizParams })
+    const signaturePoll = await buildSignature(pollParams, xfAccessKeySecret);
+    const pq = Object.entries(pollParams)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&');
 
