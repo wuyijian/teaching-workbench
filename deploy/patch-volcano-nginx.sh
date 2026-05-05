@@ -6,8 +6,22 @@
 # ─────────────────────────────────────────────────────────────────────
 set -e
 
-CONF=$(grep -lr "yixiaojian.top" \
-  /etc/nginx/conf.d/ /etc/nginx/sites-enabled/ /etc/nginx/sites-available/ \
+echo "===== nginx config diagnostics ====="
+echo "[1] nginx -V conf-path:"
+nginx -V 2>&1 | grep -oE -- '--conf-path=[^ ]+' || true
+echo "[2] /etc/nginx tree:"
+ls -la /etc/nginx/ 2>/dev/null || true
+echo "[3] /etc/nginx/conf.d:"
+ls -la /etc/nginx/conf.d/ 2>/dev/null || true
+echo "[4] /etc/nginx/sites-enabled:"
+ls -la /etc/nginx/sites-enabled/ 2>/dev/null || true
+echo "[5] /etc/nginx/sites-available:"
+ls -la /etc/nginx/sites-available/ 2>/dev/null || true
+echo "===================================="
+
+# 在所有可能的 nginx 配置目录里找包含域名的文件
+CONF=$(grep -lrE "server_name[^;]*yixiaojian\.top" \
+  /etc/nginx/ \
   2>/dev/null | head -n1)
 
 if [ -z "$CONF" ]; then
@@ -51,8 +65,10 @@ block = '''
     }
 '''
 
-# 优先匹配 HTTPS server 块第一处 location；找不到就退到任意 server 块
+# 优先匹配含 yixiaojian.top 的 server 块的第一处 location；找不到就退到任意 server 块
 patterns = [
+    r'(server\s*\{[^}]*?server_name[^;]*yixiaojian\.top[^}]*?listen\s+443\s+ssl[^}]*?)(\n\s*location\s+/)',
+    r'(server\s*\{[^}]*?listen\s+443\s+ssl[^}]*?server_name[^;]*yixiaojian\.top[^}]*?)(\n\s*location\s+/)',
     r'(server\s*\{[^}]*?listen\s+443\s+ssl[^}]*?)(\n\s*location\s+/)',
     r'(server\s*\{[^}]*?ssl_certificate[^}]*?)(\n\s*location\s+/)',
     r'(server\s*\{[^}]*?server_name[^;]*yixiaojian\.top[^}]*?)(\n\s*location\s+/)',
@@ -64,7 +80,7 @@ for pat in patterns:
         break
 
 if not m:
-    print('无法定位 HTTPS server 块', file=sys.stderr)
+    print('无法定位 server 块第一处 location', file=sys.stderr)
     sys.exit(1)
 
 new_src = src[:m.end(1)] + block + src[m.end(1):]
