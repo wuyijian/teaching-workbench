@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import type { Task } from '../types';
 import { normalizeStudentKey, getStudentNames } from '../utils/student';
-import { hasPlatformVolcano } from '../config/platformApi';
 import { pickAudioFileViaElectron } from '../config/app';
 import { usePasteFile } from '../hooks/usePasteFile';
 import { useMediaRecorder } from '../hooks/useMediaRecorder';
@@ -112,8 +111,9 @@ function CreateForm({
 }) {
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
-  const hasVolcano = hasPlatformVolcano();
-  const [engine, setEngine] = useState<Task['engine']>(hasVolcano ? 'volcano' : 'xfyun');
+  // 当前线上仅启用「豆包大模型」转写。讯飞侧暂未续额度，UI 隐藏选择器。
+  // 历史任务的引擎字段保留，仅影响新建任务的默认值。
+  const [engine] = useState<Task['engine']>('volcano');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
@@ -261,35 +261,6 @@ function CreateForm({
             className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
           />
         </div>
-
-        {/* Engine selector — only shown when both engines are available */}
-        {hasVolcano && (
-          <div>
-            <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-              转写引擎
-            </label>
-            <div className="flex gap-0.5 p-0.5 rounded-lg"
-              style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
-              {([
-                { value: 'volcano', label: '豆包大模型',  desc: '精准·快速' },
-                { value: 'xfyun',   label: '讯飞大模型',  desc: '稳定·支持方言' },
-              ] as const).map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setEngine(opt.value)}
-                  className="flex-1 flex flex-col items-center py-1.5 rounded-md transition-all"
-                  style={engine === opt.value
-                    ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
-                    : { color: 'var(--text-3)', border: '1px solid transparent' }}
-                >
-                  <span className="text-xs font-medium">{opt.label}</span>
-                  <span className="text-[10px] opacity-70">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Audio source */}
         <div>
@@ -820,7 +791,7 @@ function exportTaskMd(task: Task) {
     `- **学生**：${task.studentName}`,
     task.topic ? `- **主题**：${task.topic}` : '',
     `- **日期**：${dateStr}`,
-    `- **引擎**：讯飞大模型`,
+    `- **引擎**：${task.engine === 'volcano' ? '豆包大模型' : '讯飞大模型'}`,
     '',
     '## 课堂转写',
     '',
