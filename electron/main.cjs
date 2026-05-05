@@ -17,6 +17,7 @@ function setupApiRequestHeaders(sess) {
     'https://dashscope.aliyuncs.com/*',
     'https://open.bigmodel.cn/*',
     'https://office-api-ist-dx.iflyaisol.com/*',
+    'https://openspeech.bytedance.com/*',
   ];
 
   sess.webRequest.onBeforeSendHeaders({ urls: API_PATTERNS }, (details, callback) => {

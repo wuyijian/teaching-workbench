@@ -4,6 +4,7 @@
 #
 # 必须在仓库 Settings → Secrets and variables → Actions 配置：
 #   VITE_XF_APP_ID / VITE_XF_ACCESS_KEY_ID / VITE_XF_ACCESS_KEY_SECRET
+#   VITE_VOLCANO_APP_ID / VITE_VOLCANO_ACCESS_KEY
 #   VITE_LLM_API_KEY
 #   VITE_LLM_MODEL        （可选，默认 kimi-k2.5）
 #   VITE_SUPABASE_URL     （可选）
@@ -61,6 +62,8 @@ jobs:
           VITE_XF_APP_ID:              ${{ secrets.VITE_XF_APP_ID }}
           VITE_XF_ACCESS_KEY_ID:       ${{ secrets.VITE_XF_ACCESS_KEY_ID }}
           VITE_XF_ACCESS_KEY_SECRET:   ${{ secrets.VITE_XF_ACCESS_KEY_SECRET }}
+          VITE_VOLCANO_APP_ID:         ${{ secrets.VITE_VOLCANO_APP_ID }}
+          VITE_VOLCANO_ACCESS_KEY:     ${{ secrets.VITE_VOLCANO_ACCESS_KEY }}
           VITE_LLM_API_KEY:            ${{ secrets.VITE_LLM_API_KEY }}
           VITE_LLM_MODEL:              ${{ secrets.VITE_LLM_MODEL }}
           VITE_SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
@@ -70,6 +73,8 @@ jobs:
           VITE_XF_APP_ID=${VITE_XF_APP_ID}
           VITE_XF_ACCESS_KEY_ID=${VITE_XF_ACCESS_KEY_ID}
           VITE_XF_ACCESS_KEY_SECRET=${VITE_XF_ACCESS_KEY_SECRET}
+          VITE_VOLCANO_APP_ID=${VITE_VOLCANO_APP_ID}
+          VITE_VOLCANO_ACCESS_KEY=${VITE_VOLCANO_ACCESS_KEY}
           VITE_LLM_API_KEY=${VITE_LLM_API_KEY}
           VITE_LLM_BASE_URL=https://api.moonshot.cn/v1
           VITE_LLM_MODEL=${VITE_LLM_MODEL:-kimi-k2.5}
