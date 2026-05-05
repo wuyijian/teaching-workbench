@@ -187,6 +187,58 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=yes" \
             ./dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
+      # 10b. 自动注入新增的 nginx location 块（如 /volcano-api/）。
+      #      只在配置里没有该 location 时才追加，幂等可重复执行。
+      #      不会覆盖 certbot 维护的 SSL/HTTPS server 块。
+      - name: Patch nginx with new locations
+        run: |
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+            set -e
+            CONF=$(grep -lr "yixiaojian.top" /etc/nginx/conf.d/ /etc/nginx/sites-enabled/ /etc/nginx/sites-available/ 2>/dev/null | head -n1)
+            [ -z "$CONF" ] && { echo "未找到 nginx server 配置文件"; exit 1; }
+            echo "Patching $CONF"
+
+            # /volcano-api/ → 火山引擎豆包大模型录音转写
+            if ! grep -q "/volcano-api/" "$CONF"; then
+              cp "$CONF" "$CONF.bak.$(date +%s)"
+              python3 - <<PY
+import re
+with open("$CONF") as f: src = f.read()
+block = """
+    # ── 火山引擎豆包大模型录音转写反代 ──
+    location /volcano-api/ {
+        proxy_pass https://openspeech.bytedance.com/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host openspeech.bytedance.com;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        client_max_body_size    100M;
+        proxy_request_buffering off;
+        client_body_timeout     600s;
+        send_timeout            600s;
+        proxy_connect_timeout   30s;
+        proxy_send_timeout      600s;
+        proxy_read_timeout      600s;
+    }
+"""
+m = re.search(r"(server\s*{[^}]*?listen\s+443\s+ssl[^}]*?)(\n\s*location\s+/)", src, re.DOTALL)
+if not m:
+    m = re.search(r"(server\s*{[^}]*?ssl_certificate[^}]*?)(\n\s*location\s+/)", src, re.DOTALL)
+if not m:
+    print("无法定位 HTTPS server 块"); exit(1)
+new_src = src[:m.end(1)] + block + src[m.end(1):]
+with open("$CONF","w") as f: f.write(new_src)
+print("已注入 /volcano-api/ location")
+PY
+              echo "已 patch，验证语法..."
+              nginx -t
+            else
+              echo "/volcano-api/ 已存在，跳过"
+            fi
+          REMOTE
+
       # 11. 修权限（rsync/scp 上传后目录可能 700，nginx user 读不到）+ 重载 Nginx
       - name: Fix permissions + reload Nginx
         run: |
