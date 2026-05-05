@@ -114,7 +114,13 @@ try {
   INITIAL_DATA = { tasks: [], mergedArchived: {} };
 }
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
-import { xfyunProxyBase } from '../config/urls';
+import {
+  buildVolcanoHeaders, buildVolcanoBody, fileToBase64,
+  parseVolcanoAsyncResult,
+  isVolcanoSuccess, isVolcanoSilent, isVolcanoPending,
+} from '../utils/volcano';
+import { xfyunProxyBase, volcanoProxyBase } from '../config/urls';
+import { getPlatformVolcanoCredentials } from '../config/platformApi';
 import { withRetry, isTransient } from '../utils/retry';
 
 function uid() {
@@ -264,6 +270,113 @@ async function transcribeXfyun(
   }
 }
 
+// ── 火山引擎「豆包大模型 - 录音文件识别（标准版）」 ──────────────────────────
+//   资源 ID：volc.bigasr.auc
+//   流程：submit + poll，支持 ≤100MB / ≤2h 音频
+async function transcribeVolcano(
+  file: File,
+  language: string,
+  onProgress: (p: number) => void,
+  shouldStop: () => boolean,
+): Promise<TranscriptSegment[]> {
+  const creds = getPlatformVolcanoCredentials();
+  if (!creds.apiKey && !(creds.appId && creds.accessKey)) {
+    throw new Error('火山引擎转写服务未在服务端配置，请联系管理员');
+  }
+  if (file.size < 600) {
+    throw new Error(`文件太小（${file.size} 字节），请上传有效的音频文件`);
+  }
+
+  const uid = creds.apiKey || creds.appId || 'tw-user';
+
+  // ── 1. 上传音频 → base64 ──
+  onProgress(10);
+  const base64 = await fileToBase64(file);
+  if (shouldStop()) throw new Error('已取消');
+
+  // ── 2. submit ──
+  onProgress(20);
+  const taskId = crypto.randomUUID();
+  const submitHeaders = buildVolcanoHeaders(creds, taskId);
+  const submitBody = buildVolcanoBody({ data: base64 }, uid, language, false);
+
+  await withRetry(
+    async () => {
+      const resp = await fetch(`${volcanoProxyBase}/api/v3/auc/bigmodel/submit`, {
+        method: 'POST',
+        headers: submitHeaders,
+        body: JSON.stringify(submitBody),
+      });
+      if (!resp.ok) throw new Error(`火山提交 HTTP ${resp.status}`);
+      const code = resp.headers.get('X-Api-Status-Code') ?? '';
+      if (!isVolcanoSuccess(code) && !isVolcanoPending(code)) {
+        throw new Error(`火山提交失败（${code}）：${resp.headers.get('X-Api-Message') ?? ''}`);
+      }
+    },
+    {
+      maxAttempts: 3,
+      baseDelayMs: 2000,
+      shouldRetry: (err) => {
+        if (shouldStop()) return false;
+        if (err.message.startsWith('火山提交失败')) return false;
+        return isTransient(err);
+      },
+      onRetry: (err, n, delay) => console.warn(`[volcano] submit 第${n}次重试(${delay}ms):`, err.message),
+    },
+  );
+
+  // ── 3. 轮询 ──
+  const pollStart = Date.now();
+  const MAX_WAIT_MS = 3 * 60 * 60 * 1000;
+  let pollFails = 0;
+  const MAX_POLL_FAIL = 3;
+
+  while (true) {
+    if (shouldStop()) throw new Error('已取消');
+    const elapsed = Date.now() - pollStart;
+    if (elapsed >= MAX_WAIT_MS) throw new Error(`火山转写超时（已等待 ${Math.round(elapsed / 60000)} 分钟）`);
+
+    const interval = elapsed < 2 * 60_000 ? 3_000 : elapsed < 10 * 60_000 ? 6_000 : 12_000;
+    await new Promise(r => setTimeout(r, interval));
+    if (shouldStop()) throw new Error('已取消');
+
+    const queryHeaders = buildVolcanoHeaders(creds, taskId);
+    try {
+      // 火山 query 接口约定：body 必须是空对象 {}，taskId 通过 X-Api-Request-Id header 传递
+      const qResp = await fetch(`${volcanoProxyBase}/api/v3/auc/bigmodel/query`, {
+        method: 'POST',
+        headers: queryHeaders,
+        body: '{}',
+      });
+      if (!qResp.ok) throw new Error(`火山查询 HTTP ${qResp.status}`);
+      const code = qResp.headers.get('X-Api-Status-Code') ?? '';
+
+      if (isVolcanoPending(code)) {
+        const pct = Math.min(95, Math.round((elapsed / (5 * 60_000)) * 75) + 20);
+        onProgress(pct);
+        pollFails = 0;
+        continue;
+      }
+      if (isVolcanoSilent(code)) { onProgress(100); return []; }
+      if (!isVolcanoSuccess(code)) {
+        throw new Error(`火山查询失败（${code}）：${qResp.headers.get('X-Api-Message') ?? ''}`);
+      }
+
+      const qData = await qResp.json() as Parameters<typeof parseVolcanoAsyncResult>[0];
+      onProgress(100);
+      return parseVolcanoAsyncResult(qData);
+
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (isTransient(e) && ++pollFails <= MAX_POLL_FAIL) {
+        console.warn(`[volcano] 轮询第${pollFails}次失败，继续:`, e.message);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useTaskManager(settings: Settings, language: string, quotaApi?: QuotaApi) {
   const [tasks, setTasks] = useState<Task[]>(() => INITIAL_DATA.tasks);
@@ -275,6 +388,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   const runningRef       = useRef(false);                 // 当前是否有任务在执行
   const runningTaskIdRef = useRef<string | null>(null);   // 当前执行的任务 ID
   const pendingRef       = useRef(new Map<string, File>());
+  const engineRef        = useRef(new Map<string, Task['engine']>()); // 每个任务的转写引擎
 
   // 让 drain 始终拿到最新 settings / language / quotaApi，避免闭包旧值
   const settingsRef = useRef(settings);
@@ -329,7 +443,10 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     patch(id, { status: 'uploading', progress: 5 });
 
     try {
-      const segments = await transcribeXfyun(file, s, l, onProgress, shouldStop);
+      const engine = engineRef.current.get(id) ?? 'volcano';
+      const segments = engine === 'volcano'
+        ? await transcribeVolcano(file, l, onProgress, shouldStop)
+        : await transcribeXfyun(file, s, l, onProgress, shouldStop);
       if (!stopFlags.current.get(id)) {
         patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
         // 扣量：使用估算时长（来自音频元数据，已是真实总长）
@@ -342,6 +459,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     } finally {
       pendingRef.current.delete(id);
       stopFlags.current.delete(id);
+      engineRef.current.delete(id);
       // deleteTask 删除正在运行的任务时会提前重置 runningRef（runningTaskIdRef 同步清空）。
       // 此处只有仍是"当前任务"时才重置，防止 deleteTask 已触发 drain 后再次触发导致并发执行。
       if (runningTaskIdRef.current === id) {
@@ -357,6 +475,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     topic: string,
     prompt: string,
     file: File,
+    engine: Task['engine'] = 'volcano',
   ) => {
     const id = uid();
     const names = studentNames.filter(n => n.trim());
@@ -364,7 +483,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       id,
       studentName: formatStudentNames(names),
       studentNames: names,
-      topic, prompt, engine: 'xfyun',
+      topic, prompt, engine,
       audioFileName: file.name,
       audioFile: file,
       status: 'queued',
@@ -376,6 +495,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     setTasks(prev => [newTask, ...prev]);
     stopFlags.current.set(id, false);
     pendingRef.current.set(id, file);
+    engineRef.current.set(id, engine);
     queueRef.current.push(id);
     drain();
   }, [drain]);
@@ -390,6 +510,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     // 立即从内部队列和 pending 文件 map 里清除，保持内部状态与 tasks state 一致
     queueRef.current = queueRef.current.filter(qid => qid !== id);
     pendingRef.current.delete(id);
+    engineRef.current.delete(id);
     setTasks(prev => {
       const removed = prev.find(t => t.id === id);
       const next = prev.filter(t => t.id !== id);
@@ -447,7 +568,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     const names = task.studentNames && task.studentNames.length > 0
       ? task.studentNames
       : [task.studentName];
-    createTask(names, task.topic, task.prompt, task.audioFile);
+    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano');
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {

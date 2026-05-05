@@ -123,9 +123,9 @@ export default function App() {
   }, [settings, handleSaveSettings]);
 
   const handleCreateTask = useCallback((
-    names: string[], topic: string, prompt: string, file: File,
+    names: string[], topic: string, prompt: string, file: File, engine: Parameters<typeof taskManager.createTask>[4] = 'volcano',
   ) => {
-    taskManager.createTask(names, topic, prompt, file);
+    taskManager.createTask(names, topic, prompt, file, engine);
   }, [taskManager]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {

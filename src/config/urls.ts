@@ -13,6 +13,16 @@ export const xfyunProxyBase = isElectron
   : trim((import.meta.env.VITE_XFYUN_PROXY_BASE as string | undefined)?.trim() || '/xfyun-api');
 
 /**
+ * 火山引擎豆包大模型录音转写 API 基路径。
+ * 火山 host：https://openspeech.bytedance.com
+ * - Electron：直连公网
+ * - 网页：走同域反代 /volcano-api（需在 Nginx 配置反代）
+ */
+export const volcanoProxyBase = isElectron
+  ? 'https://openspeech.bytedance.com'
+  : trim((import.meta.env.VITE_VOLCANO_PROXY_BASE as string | undefined)?.trim() || '/volcano-api');
+
+/**
  * Whisper / OpenAI-compatible 音频转写基路径。
  * Electron 里 settings.apiBaseUrl 可能被历史存档为相对路径，需在调用处统一处理。
  */
