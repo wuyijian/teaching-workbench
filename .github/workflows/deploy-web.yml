@@ -74,6 +74,9 @@ jobs:
       VITE_VOLCANO_APP_ID: ${{ secrets.VITE_VOLCANO_APP_ID }}
       VITE_VOLCANO_ACCESS_KEY: ${{ secrets.VITE_VOLCANO_ACCESS_KEY }}
       VITE_VOLCANO_PROXY_BASE: /volcano-api
+      # 管理大盘 & Umami 追踪（可选）
+      VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
+      VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
 
     steps:
       # 1. 拉代码
@@ -110,6 +113,8 @@ jobs:
           VITE_VOLCANO_APP_ID=${VITE_VOLCANO_APP_ID}
           VITE_VOLCANO_ACCESS_KEY=${VITE_VOLCANO_ACCESS_KEY}
           VITE_VOLCANO_PROXY_BASE=${VITE_VOLCANO_PROXY_BASE}
+          VITE_ADMIN_EMAIL=${VITE_ADMIN_EMAIL}
+          VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID}
           EOF
 
       # 5a. 诊断：打印 Secrets 是否注入（只看长度，不泄露内容）

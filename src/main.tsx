@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { LandingPage } from './LandingPage.tsx'
 import { WechatCallbackPage } from './pages/WechatCallbackPage.tsx'
+import { AdminPage } from './pages/AdminPage.tsx'
 import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { SubscriptionProvider } from './context/SubscriptionContext.tsx'
 import { isElectronTarget } from './config/app.ts'
@@ -12,14 +13,28 @@ import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
 // 客户端路由（无需 react-router）：
 //   /                       → 落地页
 //   /app                    → 工作台（未登录会被守卫挡回登录弹窗）
+//   /admin                  → 管理大盘（仅 VITE_ADMIN_EMAIL 可访问）
 //   /auth/wechat/callback   → 微信 OAuth 回调中转
 const path = window.location.pathname
+
+// ── Umami 流量追踪脚本（仅生产构建且配置了 VITE_UMAMI_WEBSITE_ID 时生效）
+if (import.meta.env.VITE_UMAMI_WEBSITE_ID) {
+  const s = document.createElement('script')
+  s.defer = true
+  s.src = '/umami/script.js'
+  s.setAttribute('data-website-id', import.meta.env.VITE_UMAMI_WEBSITE_ID)
+  s.setAttribute('data-domains', 'yixiaojian.top')
+  document.head.appendChild(s)
+}
 
 function Root() {
   const { user, loading, authEnabled } = useAuth()
 
   // 微信 OAuth 回调
   if (path.startsWith('/auth/wechat/callback')) return <WechatCallbackPage />
+
+  // 管理大盘
+  if (path.startsWith('/admin')) return <AdminPage />
 
   // Electron 桌面端：始终进工作台（无云端账号体系）
   if (isElectronTarget) return <App />
