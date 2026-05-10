@@ -53,7 +53,12 @@ export function AdminPage() {
       if (rpcError) throw rpcError;
       setStats(data as AdminStats);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error
+        ? e.message
+        : (typeof e === 'object' && e !== null && 'message' in e)
+          ? String((e as { message: unknown }).message)
+          : JSON.stringify(e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
