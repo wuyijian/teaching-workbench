@@ -28,6 +28,17 @@ interface ImportMetaEnv {
   readonly VITE_XF_APP_ID?: string
   readonly VITE_XF_ACCESS_KEY_ID?: string
   readonly VITE_XF_ACCESS_KEY_SECRET?: string
+  /** 火山引擎豆包大模型录音转写 */
+  readonly VITE_VOLCANO_APP_ID?: string
+  readonly VITE_VOLCANO_ACCESS_KEY?: string
+  readonly VITE_VOLCANO_API_KEY?: string
+  readonly VITE_VOLCANO_PROXY_BASE?: string
+  /** 管理大盘：仅此邮箱可访问 /admin */
+  readonly VITE_ADMIN_EMAIL?: string
+  /** Umami 流量统计 Website ID */
+  readonly VITE_UMAMI_WEBSITE_ID?: string
+  /** Umami 追踪脚本 URL（默认 Umami Cloud） */
+  readonly VITE_UMAMI_SCRIPT_URL?: string
 }
 
 interface ImportMeta {
