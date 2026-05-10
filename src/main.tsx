@@ -18,10 +18,11 @@ import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
 const path = window.location.pathname
 
 // ── Umami 流量追踪脚本（仅生产构建且配置了 VITE_UMAMI_WEBSITE_ID 时生效）
+// VITE_UMAMI_SCRIPT_URL 默认使用 Umami Cloud；自托管时改为服务器地址
 if (import.meta.env.VITE_UMAMI_WEBSITE_ID) {
   const s = document.createElement('script')
   s.defer = true
-  s.src = '/umami/script.js'
+  s.src = import.meta.env.VITE_UMAMI_SCRIPT_URL || 'https://cloud.umami.is/script.js'
   s.setAttribute('data-website-id', import.meta.env.VITE_UMAMI_WEBSITE_ID)
   s.setAttribute('data-domains', 'yixiaojian.top')
   document.head.appendChild(s)

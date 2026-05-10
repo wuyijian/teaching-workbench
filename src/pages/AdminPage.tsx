@@ -156,11 +156,11 @@ export function AdminPage() {
       <SectionHeader icon={<BarChart2 size={13} />} title="流量大盘" />
       <div style={styles.umamiCard}>
         <p style={{ margin: '0 0 14px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
-          Umami 自托管：实时在线人数 · PV · UV · 来源渠道 · 设备分布
+          Umami Cloud：实时在线人数 · PV · UV · 来源渠道 · 设备分布
         </p>
-        <a href="/umami/" target="_blank" rel="noopener noreferrer" style={styles.umamiLink}>
+        <a href="https://cloud.umami.is" target="_blank" rel="noopener noreferrer" style={styles.umamiLink}>
           <ExternalLink size={12} />
-          打开 Umami 控制台
+          打开 Umami Cloud 控制台
         </a>
       </div>
 
