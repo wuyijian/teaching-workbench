@@ -45,6 +45,7 @@ export function AdminPage() {
   const isAdmin = Boolean(ADMIN_EMAIL && user?.email === ADMIN_EMAIL);
 
   const fetchStats = useCallback(async () => {
+    if (!supabase) { setError('Supabase 未配置'); return; }
     setLoading(true);
     setError(null);
     try {
