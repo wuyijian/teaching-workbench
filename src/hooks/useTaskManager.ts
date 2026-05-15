@@ -476,6 +476,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     prompt: string,
     file: File,
     engine: Task['engine'] = 'volcano',
+    examAnalysis?: string,
   ) => {
     const id = uid();
     const names = studentNames.filter(n => n.trim());
@@ -484,6 +485,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       studentName: formatStudentNames(names),
       studentNames: names,
       topic, prompt, engine,
+      examAnalysis,
       audioFileName: file.name,
       audioFile: file,
       status: 'queued',
@@ -568,7 +570,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     const names = task.studentNames && task.studentNames.length > 0
       ? task.studentNames
       : [task.studentName];
-    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano');
+    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano', task.examAnalysis);
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {

@@ -81,7 +81,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine']) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -106,7 +106,7 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine']) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string) => void;
   onCancel: () => void;
 }) {
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
@@ -119,6 +119,7 @@ function CreateForm({
   const [filePickError, setFilePickError] = useState<string | null>(null);
   const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
   const [recordedDuration, setRecordedDuration] = useState(0);
+  const [examAnalysis, setExamAnalysis] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -184,7 +185,15 @@ function CreateForm({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(effectiveNames, topic.trim(), FEEDBACK_PROMPT, file!, engine);
+    const normalizedExamAnalysis = examAnalysis.trim();
+    onSubmit(
+      effectiveNames,
+      topic.trim(),
+      FEEDBACK_PROMPT,
+      file!,
+      engine,
+      normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
+    );
   };
 
   return (
@@ -458,6 +467,23 @@ function CreateForm({
               )}
             </div>
           )}
+        </div>
+
+        {/* Exam analysis */}
+        <div className="rounded-xl p-2.5" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
+          <label className="text-[11px] font-medium mb-2 block" style={{ color: 'var(--text-3)' }}>
+            试卷分析 <span className="ml-1 text-[10px]" style={{ color: 'var(--text-3)' }}>可选</span>
+          </label>
+          <textarea
+            value={examAnalysis}
+            onChange={e => setExamAnalysis(e.target.value)}
+            placeholder="可粘贴本次试卷批改结果、得分点/失分点、错题类型等"
+            rows={4}
+            className="w-full rounded-lg px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors resize-y min-h-[92px]"
+            style={{ background: 'var(--bg-s1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+            onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+            onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+          />
         </div>
 
         <button
@@ -740,6 +766,14 @@ function TaskDetail({
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 min-h-0">
+        {task.examAnalysis?.trim() && (
+          <div className="mb-3.5 rounded-xl px-3.5 py-3" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-3)' }}>试卷分析</p>
+            <div className="text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-2)' }}>
+              {task.examAnalysis}
+            </div>
+          </div>
+        )}
         {isActive && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
             <Loader2 size={24} className="animate-spin text-indigo-400" />
@@ -802,6 +836,9 @@ function exportTaskMd(task: Task) {
     }),
     '',
   ];
+  if (task.examAnalysis?.trim()) {
+    lines.push('## 试卷分析', '', task.examAnalysis.trim(), '');
+  }
   if (task.aiSummary) {
     lines.push('## 课堂反馈', '', task.aiSummary, '');
   }
@@ -845,9 +882,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'],
+    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'], examAnalysis?: string,
   ) => {
-    onCreateTask(names, topic, prompt, file, eng);
+    onCreateTask(names, topic, prompt, file, eng, examAnalysis);
     setView('list');
   }, [onCreateTask]);
 

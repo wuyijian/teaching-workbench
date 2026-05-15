@@ -343,9 +343,12 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       : `学生姓名：${taskNames[0] ?? selectedTask.studentName}`;
     const meta = [`日期：${dateStr}`, namesLabel, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
     const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
+    const examAnalysisBlock = selectedTask.examAnalysis?.trim()
+      ? `\n试卷分析：\n${selectedTask.examAnalysis.trim()}`
+      : '';
     // 优先使用工作区选择的 prompt，fallback 到全局设置 / 内置默认
     const prompt = activePrompt.trim() || effectiveFeedbackPrompt(settings);
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}\n\n课堂录音转写内容：\n${transcript}`;
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}\n\n课堂录音转写内容：\n${transcript}`;
 
     try {
       await streamAI(
@@ -589,6 +592,30 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 试卷分析只读展示 */}
+        {selectedTask?.examAnalysis?.trim() && (
+          <div style={{ borderTop: '1px solid var(--border)', padding: isMobile ? '10px 12px' : '8px 12px' }}>
+            <p
+              className="font-semibold mb-1.5"
+              style={{ color: 'var(--text-3)', fontSize: isMobile ? 12 : 11 }}
+            >
+              试卷分析
+            </p>
+            <div
+              className="leading-relaxed whitespace-pre-wrap break-words rounded-xl"
+              style={{
+                background: 'var(--bg-s2)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-2)',
+                padding: isMobile ? '10px 12px' : '8px 10px',
+                fontSize: isMobile ? 12 : 11,
+              }}
+            >
+              {selectedTask.examAnalysis}
+            </div>
           </div>
         )}
       </div>

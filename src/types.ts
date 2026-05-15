@@ -57,6 +57,7 @@ export interface Task {
   createdAt: number;
   estimateMs?: number;
   notes?: string;       // 教师补充信息（课前检测、课堂观察等）
+  examAnalysis?: string; // 试卷分析（得分点/失分点/错题类型等）
   aiSummary?: string;
   aiSavedAt?: number;
 }
