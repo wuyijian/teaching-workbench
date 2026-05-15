@@ -129,7 +129,7 @@ export default function App() {
     file: File,
     engine: Parameters<typeof taskManager.createTask>[4] = 'volcano',
     examAnalysis?: string,
-    examFile?: Parameters<typeof taskManager.createTask>[7],
+    examFile?: Parameters<typeof taskManager.createTask>[6],
     examFileDataUrl?: string,
   ) => {
     taskManager.createTask(names, topic, prompt, file, engine, examAnalysis, examFile, examFileDataUrl);
