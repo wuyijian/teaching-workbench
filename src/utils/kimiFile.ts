@@ -35,6 +35,30 @@ export async function uploadFileToKimi(
 }
 
 /**
+ * 获取 Kimi 已上传文件的提取文本内容
+ * GET {baseUrl}/files/{file_id}/content
+ * purpose=file-extract 时 Kimi 会返回解析出的纯文本
+ */
+export async function getKimiFileContent(
+  fileId: string,
+  apiKey: string,
+  baseUrl: string,
+): Promise<string> {
+  const normalizedBase = baseUrl.replace(/\/$/, '');
+  const resp = await fetch(`${normalizedBase}/files/${fileId}/content`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`Kimi 文件内容获取失败（HTTP ${resp.status}）: ${text.slice(0, 200)}`);
+  }
+
+  return resp.text();
+}
+
+/**
  * 删除 Kimi 上的文件（任务删除时清理，失败静默忽略）
  */
 export async function deleteKimiFile(

@@ -9,6 +9,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
+import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
@@ -361,18 +362,25 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       return activePrompt.trim() || defaultPrompt;
     })();
     const transcriptSection = transcript ? `\n\n课堂录音转写内容：\n${transcript}` : '';
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${transcriptSection}`;
 
-    // 若任务关联了 Kimi file_id，使用多模态消息格式让 Kimi 直接读取试卷文件
-    const userMessage: AiMessage = isExamTask && selectedTask.examKimiFileId
-      ? {
-          role: 'user',
-          content: [
-            { type: 'file', file: { file_id: selectedTask.examKimiFileId } },
-            { type: 'text', text: userContent },
-          ],
-        }
-      : { role: 'user', content: userContent };
+    // 若任务关联了 Kimi file_id，先通过 /files/{id}/content 获取提取的文本，
+    // 再以普通文字拼入 prompt（Kimi 不支持 file content part 格式）
+    let examFileText = '';
+    if (isExamTask && selectedTask.examKimiFileId) {
+      try {
+        const base = resolveApiBase(settings.apiBaseUrl);
+        examFileText = await getKimiFileContent(selectedTask.examKimiFileId, settings.apiKey, base);
+      } catch (err) {
+        console.warn('[exam] 获取试卷文本失败，退回纯文字分析：', err);
+      }
+    }
+
+    const examFileSection = examFileText.trim()
+      ? `\n\n试卷原文（OCR 提取）：\n${examFileText.trim()}`
+      : '';
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}`;
+
+    const userMessage: AiMessage = { role: 'user', content: userContent };
 
     try {
       await streamAI(
