@@ -131,8 +131,9 @@ export default function App() {
     examAnalysis?: string,
     examFile?: Parameters<typeof taskManager.createTask>[6],
     examFileDataUrl?: string,
+    examFileRaw?: File,
   ) => {
-    taskManager.createTask(names, topic, prompt, file, engine, examAnalysis, examFile, examFileDataUrl);
+    taskManager.createTask(names, topic, prompt, file, engine, examAnalysis, examFile, examFileDataUrl, examFileRaw);
   }, [taskManager]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {

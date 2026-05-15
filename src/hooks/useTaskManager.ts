@@ -59,6 +59,8 @@ function saveTasks(tasks: Task[]) {
       error: (rest.status === 'uploading' || rest.status === 'transcribing')
         ? '页面刷新后转写中断，请重新上传'
         : rest.error,
+      // Kimi 上传中途页面关闭 → 重置为 error，提示用户重新上传
+      examKimiUploadStatus: rest.examKimiUploadStatus === 'uploading' ? 'error' : rest.examKimiUploadStatus,
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
   } catch { /* quota exceeded 等异常静默忽略 */ }
@@ -120,8 +122,9 @@ import {
   isVolcanoSuccess, isVolcanoSilent, isVolcanoPending,
 } from '../utils/volcano';
 import { xfyunProxyBase, volcanoProxyBase } from '../config/urls';
-import { getPlatformVolcanoCredentials } from '../config/platformApi';
+import { getPlatformVolcanoCredentials, getPlatformLlmApiKey, getPlatformLlmBaseUrl } from '../config/platformApi';
 import { withRetry, isTransient } from '../utils/retry';
+import { uploadFileToKimi, deleteKimiFile } from '../utils/kimiFile';
 
 function uid() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -389,6 +392,12 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   const runningTaskIdRef = useRef<string | null>(null);   // 当前执行的任务 ID
   const pendingRef       = useRef(new Map<string, File>());
   const engineRef        = useRef(new Map<string, Task['engine']>()); // 每个任务的转写引擎
+  // taskId -> Kimi file_id，用于 deleteTask 时清理远端文件（含从 localStorage 恢复的旧任务）
+  const kimiFileIdsRef   = useRef(new Map<string, string>(
+    INITIAL_DATA.tasks
+      .filter(t => t.examKimiFileId)
+      .map(t => [t.id, t.examKimiFileId!]),
+  ));
 
   // 让 drain 始终拿到最新 settings / language / quotaApi，避免闭包旧值
   const settingsRef = useRef(settings);
@@ -479,11 +488,13 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     examAnalysis?: string,
     examFile?: Task['examFile'],
     examFileDataUrl?: string,
+    examFileRaw?: File,
   ) => {
     const id = uid();
     const names = studentNames.filter(n => n.trim());
     // exam tasks have no audio file; transcribe tasks always have one
     const taskType: Task['taskType'] = file ? 'transcribe' : 'exam';
+    const hasExamFile = taskType === 'exam' && !!examFileRaw;
     const newTask: Task = {
       id,
       studentName: formatStudentNames(names),
@@ -501,6 +512,8 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       segments: [],
       error: null,
       createdAt: Date.now(),
+      // 有文件时立即标记 uploading，等上传完毕再更新
+      examKimiUploadStatus: hasExamFile ? 'uploading' : undefined,
     };
     setTasks(prev => [newTask, ...prev]);
     if (file) {
@@ -510,7 +523,27 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       queueRef.current.push(id);
       drain();
     }
-  }, [drain]);
+
+    // 异步上传试卷到 Kimi（不阻塞任务创建）
+    if (hasExamFile) {
+      const apiKey = getPlatformLlmApiKey();
+      const baseUrl = getPlatformLlmBaseUrl();
+      if (apiKey && baseUrl) {
+        uploadFileToKimi(examFileRaw!, apiKey, baseUrl)
+          .then(fileId => {
+            kimiFileIdsRef.current.set(id, fileId);
+            patch(id, { examKimiFileId: fileId, examKimiUploadStatus: 'ready' });
+          })
+          .catch(err => {
+            console.error('[kimiFile] 上传失败:', err);
+            patch(id, { examKimiUploadStatus: 'error' });
+          });
+      } else {
+        // 未配置 LLM key，直接标记失败
+        patch(id, { examKimiUploadStatus: 'error' });
+      }
+    }
+  }, [drain, patch]);
 
   const cancelTask = useCallback((id: string) => {
     stopFlags.current.set(id, true);
@@ -523,6 +556,18 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     queueRef.current = queueRef.current.filter(qid => qid !== id);
     pendingRef.current.delete(id);
     engineRef.current.delete(id);
+
+    // Fire-and-forget：清理 Kimi 上的试卷文件（失败不报错）
+    const kimiFileId = kimiFileIdsRef.current.get(id);
+    if (kimiFileId) {
+      kimiFileIdsRef.current.delete(id);
+      const apiKey = getPlatformLlmApiKey();
+      const baseUrl = getPlatformLlmBaseUrl();
+      if (apiKey && baseUrl) {
+        deleteKimiFile(kimiFileId, apiKey, baseUrl).catch(() => {});
+      }
+    }
+
     setTasks(prev => {
       const removed = prev.find(t => t.id === id);
       const next = prev.filter(t => t.id !== id);

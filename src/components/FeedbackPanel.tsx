@@ -48,8 +48,13 @@ function parseSseLine(line: string): string | null {
   }
 }
 
+type AiMessage = {
+  role: string;
+  content: string | Array<{ type: string; [key: string]: unknown }>;
+};
+
 async function streamAI(
-  messages: { role: string; content: string }[],
+  messages: AiMessage[],
   settings: Settings,
   signal: AbortSignal,
   onChunk: (c: string) => void,
@@ -358,9 +363,20 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const transcriptSection = transcript ? `\n\n课堂录音转写内容：\n${transcript}` : '';
     const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${transcriptSection}`;
 
+    // 若任务关联了 Kimi file_id，使用多模态消息格式让 Kimi 直接读取试卷文件
+    const userMessage: AiMessage = isExamTask && selectedTask.examKimiFileId
+      ? {
+          role: 'user',
+          content: [
+            { type: 'file', file: { file_id: selectedTask.examKimiFileId } },
+            { type: 'text', text: userContent },
+          ],
+        }
+      : { role: 'user', content: userContent };
+
     try {
       await streamAI(
-        [{ role: 'user', content: userContent }],
+        [userMessage],
         settings,
         ctrl.signal,
         chunk => setByTask(s => {
@@ -422,7 +438,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const ctrl = new AbortController();
     abortControllers.current.set(taskId, ctrl);
 
-    const history = [
+    const history: AiMessage[] = [
       { role: 'assistant', content: session.feedback },
       ...session.followUps.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: text },
@@ -623,6 +639,17 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   </p>
                   <p style={{ color: 'var(--text-3)', fontSize: 10 }}>
                     {(selectedTask.examFile.size / 1024 / 1024).toFixed(1)} MB
+                    {selectedTask.examKimiUploadStatus === 'uploading' && (
+                      <span className="ml-1.5 inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                        <Loader2 size={9} className="animate-spin inline" /> 试卷上传中…
+                      </span>
+                    )}
+                    {selectedTask.examKimiUploadStatus === 'ready' && (
+                      <span className="ml-1.5" style={{ color: 'var(--green)' }}>· 试卷已就绪，可生成分析</span>
+                    )}
+                    {selectedTask.examKimiUploadStatus === 'error' && (
+                      <span className="ml-1.5" style={{ color: 'var(--red)' }}>· 试卷上传失败（将使用文字分析）</span>
+                    )}
                   </p>
                 </div>
               </div>

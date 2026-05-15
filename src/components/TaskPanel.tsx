@@ -100,7 +100,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string, examFileRaw?: File) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -125,7 +125,7 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string, examFileRaw?: File) => void;
   onCancel: () => void;
 }) {
   const [taskFormType, setTaskFormType] = useState<'transcribe' | 'exam'>('transcribe');
@@ -245,6 +245,7 @@ function CreateForm({
         normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
         examFileMeta,
         dataUrl,
+        examFile ?? undefined,
       );
     }
   };
@@ -769,6 +770,24 @@ function TaskCard({
                 已反馈
               </span>
             )}
+            {task.taskType === 'exam' && task.examKimiUploadStatus === 'uploading' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"
+                style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}>
+                <Loader2 size={8} className="animate-spin" /> 试卷上传中…
+              </span>
+            )}
+            {task.taskType === 'exam' && task.examKimiUploadStatus === 'ready' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded"
+                style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid #1e4d27' }}>
+                试卷已就绪
+              </span>
+            )}
+            {task.taskType === 'exam' && task.examKimiUploadStatus === 'error' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded"
+                style={{ background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid #5a1e1e' }}>
+                试卷上传失败
+              </span>
+            )}
           </div>
 
           {/* Progress */}
@@ -919,6 +938,17 @@ function TaskDetail({
                     {(task.examFile.size / 1024 / 1024).toFixed(1)} MB · {task.examFile.type}
                   </p>
                 </div>
+                {task.examKimiUploadStatus === 'uploading' && (
+                  <span className="text-[10px] shrink-0 flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                    <Loader2 size={9} className="animate-spin" /> 上传中…
+                  </span>
+                )}
+                {task.examKimiUploadStatus === 'ready' && (
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--green)' }}>已就绪</span>
+                )}
+                {task.examKimiUploadStatus === 'error' && (
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--red)' }}>上传失败</span>
+                )}
               </div>
             )}
             {task.examAnalysis?.trim() && (
@@ -1036,9 +1066,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    names: string[], topic: string, prompt: string, file: File | null, eng: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string,
+    names: string[], topic: string, prompt: string, file: File | null, eng: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string, examFileRaw?: File,
   ) => {
-    onCreateTask(names, topic, prompt, file, eng, examAnalysis, examFile, examFileDataUrl);
+    onCreateTask(names, topic, prompt, file, eng, examAnalysis, examFile, examFileDataUrl, examFileRaw);
     setView('list');
   }, [onCreateTask]);
 

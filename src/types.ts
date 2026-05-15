@@ -64,6 +64,10 @@ export interface Task {
   examFileDataUrl?: string;
   /** 任务类型，默认兼容为 'transcribe'；新建试卷分析任务时为 'exam' */
   taskType?: 'transcribe' | 'exam';
+  /** Kimi 文件解析 file_id，上传成功后写入；用于 AI 分析时直接引用试卷内容 */
+  examKimiFileId?: string;
+  /** Kimi 文件上传状态；undefined 表示无文件或旧任务（兼容） */
+  examKimiUploadStatus?: 'uploading' | 'ready' | 'error';
   aiSummary?: string;
   aiSavedAt?: number;
 }
