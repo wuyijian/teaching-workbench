@@ -596,7 +596,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         )}
 
         {/* 试卷分析只读展示 */}
-        {selectedTask?.examAnalysis?.trim() && (
+        {(selectedTask?.examAnalysis?.trim() || selectedTask?.examFile) && (
           <div style={{ borderTop: '1px solid var(--border)', padding: isMobile ? '10px 12px' : '8px 12px' }}>
             <p
               className="font-semibold mb-1.5"
@@ -604,18 +604,34 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             >
               试卷分析
             </p>
-            <div
-              className="leading-relaxed whitespace-pre-wrap break-words rounded-xl"
-              style={{
-                background: 'var(--bg-s2)',
-                border: '1px solid var(--border)',
-                color: 'var(--text-2)',
-                padding: isMobile ? '10px 12px' : '8px 10px',
-                fontSize: isMobile ? 12 : 11,
-              }}
-            >
-              {selectedTask.examAnalysis}
-            </div>
+            {selectedTask.examFile && (
+              <div className="flex items-center gap-2 mb-1.5 rounded-lg px-2.5 py-1.5 border"
+                style={{ background: 'var(--bg-s2)', borderColor: 'var(--border)' }}>
+                <FileText size={12} className="text-indigo-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate" style={{ color: 'var(--text-1)', fontSize: isMobile ? 12 : 11 }}>
+                    {selectedTask.examFile.name}
+                  </p>
+                  <p style={{ color: 'var(--text-3)', fontSize: 10 }}>
+                    {(selectedTask.examFile.size / 1024 / 1024).toFixed(1)} MB
+                  </p>
+                </div>
+              </div>
+            )}
+            {selectedTask.examAnalysis?.trim() && (
+              <div
+                className="leading-relaxed whitespace-pre-wrap break-words rounded-xl"
+                style={{
+                  background: 'var(--bg-s2)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-2)',
+                  padding: isMobile ? '10px 12px' : '8px 10px',
+                  fontSize: isMobile ? 12 : 11,
+                }}
+              >
+                {selectedTask.examAnalysis}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -129,8 +129,10 @@ export default function App() {
     file: File,
     engine: Parameters<typeof taskManager.createTask>[4] = 'volcano',
     examAnalysis?: string,
+    examFile?: Parameters<typeof taskManager.createTask>[7],
+    examFileDataUrl?: string,
   ) => {
-    taskManager.createTask(names, topic, prompt, file, engine, examAnalysis);
+    taskManager.createTask(names, topic, prompt, file, engine, examAnalysis, examFile, examFileDataUrl);
   }, [taskManager]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {

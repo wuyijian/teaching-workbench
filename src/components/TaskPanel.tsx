@@ -4,7 +4,7 @@ import {
   FileAudio, Loader2, CheckCircle2, AlertCircle,
   User, BookOpen, Upload, X,
   Archive, ArchiveRestore, FileDown, ChevronRight,
-  Mic, Pause, Play, Square,
+  Mic, Pause, Play, Square, FileText, Paperclip,
 } from 'lucide-react';
 import type { Task } from '../types';
 import { normalizeStudentKey, getStudentNames } from '../utils/student';
@@ -81,7 +81,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -106,7 +106,7 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
   onCancel: () => void;
 }) {
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
@@ -120,6 +120,9 @@ function CreateForm({
   const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
   const [recordedDuration, setRecordedDuration] = useState(0);
   const [examAnalysis, setExamAnalysis] = useState('');
+  const [examFile, setExamFile] = useState<File | null>(null);
+  const [examFileSizeWarning, setExamFileSizeWarning] = useState(false);
+  const examInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -141,6 +144,18 @@ function CreateForm({
   }, []);
 
   const handleFile = useCallback((f: File) => setFile(f), []);
+
+  const EXAM_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+  const EXAM_DATAURL_MAX = 2 * 1024 * 1024; // 2 MB — store base64 only for small files
+
+  const handleExamFile = useCallback((f: File) => {
+    if (f.size > EXAM_MAX_BYTES) {
+      setExamFileSizeWarning(true);
+      return;
+    }
+    setExamFileSizeWarning(false);
+    setExamFile(f);
+  }, []);
 
   // When recording finishes, auto-populate the file field
   useEffect(() => {
@@ -183,9 +198,20 @@ function CreateForm({
 
   const canSubmit = effectiveNames.length > 0 && file;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
     const normalizedExamAnalysis = examAnalysis.trim();
+    const examFileMeta = examFile
+      ? { name: examFile.name, size: examFile.size, type: examFile.type }
+      : undefined;
+    let dataUrl: string | undefined;
+    if (examFile && examFile.size <= EXAM_DATAURL_MAX) {
+      dataUrl = await new Promise<string>(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(examFile);
+      });
+    }
     onSubmit(
       effectiveNames,
       topic.trim(),
@@ -193,6 +219,8 @@ function CreateForm({
       file!,
       engine,
       normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
+      examFileMeta,
+      dataUrl,
     );
   };
 
@@ -474,6 +502,8 @@ function CreateForm({
           <label className="text-[11px] font-medium mb-2 block" style={{ color: 'var(--text-3)' }}>
             试卷分析 <span className="ml-1 text-[10px]" style={{ color: 'var(--text-3)' }}>可选</span>
           </label>
+
+          {/* Text input */}
           <textarea
             value={examAnalysis}
             onChange={e => setExamAnalysis(e.target.value)}
@@ -484,6 +514,60 @@ function CreateForm({
             onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
             onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
           />
+
+          {/* File upload */}
+          <div className="mt-2">
+            <input
+              ref={examInputRef}
+              type="file"
+              hidden
+              accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) handleExamFile(f);
+                e.target.value = '';
+              }}
+            />
+            {examFile ? (
+              <div className="flex items-center gap-2 rounded-lg px-2.5 py-2 border"
+                style={{ background: 'var(--bg-s1)', borderColor: 'var(--border)' }}>
+                <FileText size={13} className="text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{examFile.name}</p>
+                  <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                    {(examFile.size / 1024 / 1024).toFixed(1)} MB
+                    {examFile.size > EXAM_DATAURL_MAX && (
+                      <span className="ml-1" style={{ color: 'var(--amber)' }}>· 文件较大，仅保存文件名</span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExamFile(null)}
+                  className="transition-colors shrink-0"
+                  style={{ color: 'var(--text-3)' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => examInputRef.current?.click()}
+                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg w-full transition-colors"
+                style={{ color: 'var(--text-3)', border: '1px dashed var(--border)', background: 'var(--bg-s1)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+              >
+                <Paperclip size={11} /> 上传试卷文件（PDF / 图片，最大 10 MB）
+              </button>
+            )}
+            {examFileSizeWarning && (
+              <p className="text-[10px] mt-1" style={{ color: 'var(--red)' }}>文件超过 10 MB，请选择更小的文件</p>
+            )}
+          </div>
         </div>
 
         <button
@@ -766,12 +850,26 @@ function TaskDetail({
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 min-h-0">
-        {task.examAnalysis?.trim() && (
+        {(task.examAnalysis?.trim() || task.examFile) && (
           <div className="mb-3.5 rounded-xl px-3.5 py-3" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
             <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-3)' }}>试卷分析</p>
-            <div className="text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-2)' }}>
-              {task.examAnalysis}
-            </div>
+            {task.examFile && (
+              <div className="flex items-center gap-2 mb-2 rounded-lg px-2.5 py-1.5 border"
+                style={{ background: 'var(--bg-s1)', borderColor: 'var(--border)' }}>
+                <FileText size={12} className="text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{task.examFile.name}</p>
+                  <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                    {(task.examFile.size / 1024 / 1024).toFixed(1)} MB · {task.examFile.type}
+                  </p>
+                </div>
+              </div>
+            )}
+            {task.examAnalysis?.trim() && (
+              <div className="text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-2)' }}>
+                {task.examAnalysis}
+              </div>
+            )}
           </div>
         )}
         {isActive && (
@@ -882,9 +980,9 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'], examAnalysis?: string,
+    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string,
   ) => {
-    onCreateTask(names, topic, prompt, file, eng, examAnalysis);
+    onCreateTask(names, topic, prompt, file, eng, examAnalysis, examFile, examFileDataUrl);
     setView('list');
   }, [onCreateTask]);
 

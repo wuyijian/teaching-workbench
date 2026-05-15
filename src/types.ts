@@ -58,6 +58,12 @@ export interface Task {
   estimateMs?: number;
   notes?: string;       // 教师补充信息（课前检测、课堂观察等）
   examAnalysis?: string; // 试卷分析（得分点/失分点/错题类型等）
+  /** 试卷文件元信息（不含文件内容本身） */
+  examFile?: { name: string; size: number; type: string };
+  /** 试卷文件 base64 DataURL，仅 ≤2MB 小文件才写入；大文件为 undefined */
+  examFileDataUrl?: string;
+  /** 任务类型，默认兼容为 'transcribe'；新建试卷分析任务时为 'exam' */
+  taskType?: 'transcribe' | 'exam';
   aiSummary?: string;
   aiSavedAt?: number;
 }

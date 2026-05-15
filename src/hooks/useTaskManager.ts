@@ -477,15 +477,21 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     file: File,
     engine: Task['engine'] = 'volcano',
     examAnalysis?: string,
+    examFile?: Task['examFile'],
+    examFileDataUrl?: string,
   ) => {
     const id = uid();
     const names = studentNames.filter(n => n.trim());
+    const taskType: Task['taskType'] = examFile ? 'exam' : 'transcribe';
     const newTask: Task = {
       id,
       studentName: formatStudentNames(names),
       studentNames: names,
       topic, prompt, engine,
       examAnalysis,
+      examFile,
+      examFileDataUrl,
+      taskType,
       audioFileName: file.name,
       audioFile: file,
       status: 'queued',
@@ -570,7 +576,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     const names = task.studentNames && task.studentNames.length > 0
       ? task.studentNames
       : [task.studentName];
-    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano', task.examAnalysis);
+    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano', task.examAnalysis, task.examFile, task.examFileDataUrl);
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {
