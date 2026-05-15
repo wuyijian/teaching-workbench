@@ -46,6 +46,25 @@ export const PROMPT_PRESETS = [
   { label: '自定义…', value: '' },
 ];
 
+export const EXAM_FEEDBACK_PROMPT = `Role:
+你是一位专业的学科老师，熟悉考点分析与学情诊断。语言专业、简明、有针对性。
+
+Task:
+请根据提供的试卷批改结果与错题信息，生成一份约 200 字的试卷分析报告。
+
+Structure (严格遵守):
+1. 【试卷分析】（多个学生也放在一起）
+2. 总体情况：简述得分与整体表现
+3. 错题类型分析：归纳主要错误类型（如概念混淆、计算失误、审题不仔细等）
+4. 知识点薄弱项：指出需要重点复习的知识点或题型
+5. 改进建议：给出具体可行的复习方向与练习建议
+
+Tone & Principles:
+• 客观精准：仅基于提供的批改结果，不编造数据。
+• 分点呈现：使用 Markdown 加粗和列表，方便查阅。
+• 拒绝幻觉：只分析提供的信息，不猜测未提及的内容。
+• 不提"课堂表现"。`;
+
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
@@ -81,7 +100,7 @@ interface Props {
   hasXfCredentials: boolean;
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
-  onCreateTask: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
+  onCreateTask: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
   onDeleteTask: (id: string) => void;
   onCancelTask: (id: string) => void;
   onRetryTask: (task: Task) => void;
@@ -106,22 +125,27 @@ function CreateForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (names: string[], topic: string, prompt: string, file: File, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
+  onSubmit: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string) => void;
   onCancel: () => void;
 }) {
+  const [taskFormType, setTaskFormType] = useState<'transcribe' | 'exam'>('transcribe');
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
   // 当前线上仅启用「豆包大模型」转写。讯飞侧暂未续额度，UI 隐藏选择器。
-  // 历史任务的引擎字段保留，仅影响新建任务的默认值。
   const [engine] = useState<Task['engine']>('volcano');
+
+  // Transcribe-specific state
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [filePickError, setFilePickError] = useState<string | null>(null);
   const [recordMode, setRecordMode] = useState<'upload' | 'record'>('upload');
   const [recordedDuration, setRecordedDuration] = useState(0);
+
+  // Exam-specific state
   const [examAnalysis, setExamAnalysis] = useState('');
   const [examFile, setExamFile] = useState<File | null>(null);
   const [examFileSizeWarning, setExamFileSizeWarning] = useState(false);
+
   const examInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -135,7 +159,6 @@ function CreateForm({
 
   const addNameField = useCallback(() => {
     setNameInputs(prev => [...prev, '']);
-    // 下一帧聚焦新输入框
     setTimeout(() => nameRefs.current[nameRefs.current.length - 1]?.focus(), 30);
   }, []);
 
@@ -145,8 +168,8 @@ function CreateForm({
 
   const handleFile = useCallback((f: File) => setFile(f), []);
 
-  const EXAM_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-  const EXAM_DATAURL_MAX = 2 * 1024 * 1024; // 2 MB — store base64 only for small files
+  const EXAM_MAX_BYTES = 10 * 1024 * 1024;
+  const EXAM_DATAURL_MAX = 2 * 1024 * 1024;
 
   const handleExamFile = useCallback((f: File) => {
     if (f.size > EXAM_MAX_BYTES) {
@@ -157,7 +180,6 @@ function CreateForm({
     setExamFile(f);
   }, []);
 
-  // When recording finishes, auto-populate the file field
   useEffect(() => {
     if (recorder.audioFile) {
       setRecordedDuration(recorder.duration);
@@ -177,7 +199,7 @@ function CreateForm({
     setRecordMode('record');
   }, [recorder]);
 
-  usePasteFile(handleFile, recordMode === 'upload');
+  usePasteFile(handleFile, taskFormType === 'transcribe' && recordMode === 'upload');
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
@@ -195,34 +217,39 @@ function CreateForm({
   };
 
   const effectiveNames = nameInputs.map(n => n.trim()).filter(Boolean);
-
-  const canSubmit = effectiveNames.length > 0 && file;
+  const canSubmit = effectiveNames.length > 0 && (taskFormType === 'transcribe' ? !!file : true);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
-    const normalizedExamAnalysis = examAnalysis.trim();
-    const examFileMeta = examFile
-      ? { name: examFile.name, size: examFile.size, type: examFile.type }
-      : undefined;
-    let dataUrl: string | undefined;
-    if (examFile && examFile.size <= EXAM_DATAURL_MAX) {
-      dataUrl = await new Promise<string>(resolve => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(examFile);
-      });
+    if (taskFormType === 'transcribe') {
+      onSubmit(effectiveNames, topic.trim(), FEEDBACK_PROMPT, file!, engine);
+    } else {
+      const normalizedExamAnalysis = examAnalysis.trim();
+      const examFileMeta = examFile
+        ? { name: examFile.name, size: examFile.size, type: examFile.type }
+        : undefined;
+      let dataUrl: string | undefined;
+      if (examFile && examFile.size <= EXAM_DATAURL_MAX) {
+        dataUrl = await new Promise<string>(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(examFile);
+        });
+      }
+      onSubmit(
+        effectiveNames,
+        topic.trim(),
+        EXAM_FEEDBACK_PROMPT,
+        null,
+        engine,
+        normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
+        examFileMeta,
+        dataUrl,
+      );
     }
-    onSubmit(
-      effectiveNames,
-      topic.trim(),
-      FEEDBACK_PROMPT,
-      file!,
-      engine,
-      normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
-      examFileMeta,
-      dataUrl,
-    );
   };
+
+  const formTitle = taskFormType === 'exam' ? '新建试卷分析' : '新建课堂记录';
 
   return (
     <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
@@ -230,11 +257,36 @@ function CreateForm({
         <button onClick={onCancel} className="text-slate-400 hover:text-slate-200 transition-colors">
           <ChevronLeft size={18} />
         </button>
-        <span className="text-sm font-semibold text-slate-200">新建转写任务</span>
+        <span className="text-sm font-semibold text-slate-200">{formTitle}</span>
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Student names — one input per student */}
+        {/* Task type selector */}
+        <div className="flex gap-0.5 p-0.5 rounded-lg"
+          style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
+          <button
+            type="button"
+            onClick={() => setTaskFormType('transcribe')}
+            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+            style={taskFormType === 'transcribe'
+              ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+              : { color: 'var(--text-3)', border: '1px solid transparent' }}
+          >
+            <Mic size={11} /> 课堂记录
+          </button>
+          <button
+            type="button"
+            onClick={() => setTaskFormType('exam')}
+            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+            style={taskFormType === 'exam'
+              ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+              : { color: 'var(--text-3)', border: '1px solid transparent' }}
+          >
+            <FileText size={11} /> 试卷分析
+          </button>
+        </div>
+
+        {/* Student names — shared between both types */}
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
             <User size={11} /> 学生姓名 <span className="text-red-400">*</span>
@@ -285,297 +337,295 @@ function CreateForm({
           </div>
         </div>
 
-        {/* Topic */}
+        {/* Topic / 考试名称 — label differs by type */}
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-            <BookOpen size={11} /> 主题 <span className="text-slate-600 text-[10px] ml-1">可选</span>
+            <BookOpen size={11} />
+            {taskFormType === 'exam' ? '考试/作业名称' : '主题'}
+            <span className="text-slate-600 text-[10px] ml-1">可选</span>
           </label>
           <input
             type="text"
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            placeholder="如：数学 · 二次函数、英语 · 阅读理解"
+            placeholder={taskFormType === 'exam' ? '如：期中数学考试、第三单元作业' : '如：数学 · 二次函数、英语 · 阅读理解'}
             className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
           />
         </div>
 
-        {/* Audio source */}
-        <div>
-          <label className="text-xs text-slate-400 font-medium mb-1.5 block">
-            音频来源 <span className="text-red-400">*</span>
-          </label>
+        {/* ── 课堂记录专属：音频来源 ── */}
+        {taskFormType === 'transcribe' && (
+          <div>
+            <label className="text-xs text-slate-400 font-medium mb-1.5 block">
+              音频来源 <span className="text-red-400">*</span>
+            </label>
 
-          {/* Mode tabs */}
-          <div className="flex gap-0.5 p-0.5 rounded-lg mb-3"
-            style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
-            <button
-              type="button"
-              onClick={switchToUpload}
-              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
-              style={recordMode === 'upload'
-                ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
-                : { color: 'var(--text-3)', border: '1px solid transparent' }}
-            >
-              <Upload size={11} /> 上传文件
-            </button>
-            <button
-              type="button"
-              onClick={switchToRecord}
-              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
-              style={recordMode === 'record'
-                ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
-                : { color: 'var(--text-3)', border: '1px solid transparent' }}
-            >
-              <Mic size={11} /> 现场录音
-            </button>
-          </div>
-
-          {/* File selected (shared for upload and record modes) */}
-          {file ? (
-            <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border"
-              style={{ background: 'var(--bg-s2)', borderColor: 'var(--border)' }}>
-              {recordMode === 'record'
-                ? <Mic size={16} className="text-red-400 shrink-0" />
-                : <FileAudio size={16} className="text-indigo-400 shrink-0" />}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm truncate" style={{ color: 'var(--text-1)' }}>{file.name}</p>
-                <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>
-                  {recordMode === 'record'
-                    ? `${formatDuration(recordedDuration)} · 点击「创建任务」开始转写`
-                    : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
-                </p>
-              </div>
+            <div className="flex gap-0.5 p-0.5 rounded-lg mb-3"
+              style={{ background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
               <button
                 type="button"
-                onClick={() => { setFile(null); recorder.reset(); }}
-                className="transition-colors"
-                style={{ color: 'var(--text-3)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+                onClick={switchToUpload}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+                style={recordMode === 'upload'
+                  ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+                  : { color: 'var(--text-3)', border: '1px solid transparent' }}
               >
-                <X size={14} />
+                <Upload size={11} /> 上传文件
+              </button>
+              <button
+                type="button"
+                onClick={switchToRecord}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md transition-all"
+                style={recordMode === 'record'
+                  ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
+                  : { color: 'var(--text-3)', border: '1px solid transparent' }}
+              >
+                <Mic size={11} /> 现场录音
               </button>
             </div>
 
-          ) : recordMode === 'upload' ? (
-            /* ── 上传文件 ── */
-            <>
-              {/* 隐藏 input：通过 ref.click() 编程触发，不放在 dropzone 上方做"透明蒙层"，
-                  避免点击同时被 input 和外层 div 接收造成文件选择器开两次 */}
-              {!isElectron && (
-                <input
-                  ref={inputRef}
-                  type="file"
-                  hidden
-                  accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac,.caf"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
-                />
-              )}
-              <div
-                role="button"
-                tabIndex={0}
-                aria-label="选择或拖入音频文件"
-                className={`rounded-xl border-2 border-dashed transition-all cursor-pointer outline-none ${
-                  dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 focus-visible:border-indigo-500'
-                }`}
-                onDragOver={e => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={handleDrop}
-                onClick={openFilePicker}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    openFilePicker();
-                  }
-                }}
-              >
-                <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
-                  <Upload size={20} className="text-slate-500" />
-                  <p className="text-xs text-slate-400">点击 · 拖入 · 或 ⌘V 粘贴音频文件</p>
-                  <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
-                </div>
-              </div>
-              {filePickError && (
-                <p className="text-xs text-red-400 mt-1">{filePickError}</p>
-              )}
-            </>
-
-          ) : (
-            /* ── 现场录音 ── */
-            <div className="rounded-xl border-2 border-dashed flex flex-col items-center py-5 gap-3 transition-all"
-              style={{ borderColor: recorder.state === 'recording' ? 'var(--red)' : 'var(--border)' }}>
-
-              {/* Idle */}
-              {recorder.state === 'idle' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={recorder.start}
-                    className="w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-105"
-                    style={{ background: 'var(--red-dim)', border: '2px solid var(--red)', color: 'var(--red)' }}
-                  >
-                    <Mic size={22} />
-                  </button>
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>点击麦克风开始录音</p>
-                  {!recorder.isSupported && (
-                    <p className="text-xs" style={{ color: 'var(--amber)' }}>当前浏览器不支持录音</p>
-                  )}
-                  {recorder.error && (
-                    <p className="text-xs text-center px-4" style={{ color: 'var(--red)' }}>{recorder.error}</p>
-                  )}
-                </>
-              )}
-
-              {/* Requesting permission */}
-              {recorder.state === 'requesting' && (
-                <>
-                  <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>请求麦克风权限…</p>
-                </>
-              )}
-
-              {/* Recording / Paused */}
-              {(recorder.state === 'recording' || recorder.state === 'paused') && (
-                <>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full"
-                      style={{
-                        background: recorder.state === 'recording' ? 'var(--red)' : 'var(--amber)',
-                        boxShadow: recorder.state === 'recording' ? '0 0 8px var(--red)' : undefined,
-                        animation: recorder.state === 'recording' ? 'pulse 1.2s ease-in-out infinite' : undefined,
-                      }}
-                    />
-                    <span className="text-xl font-mono font-semibold tabular-nums"
-                      style={{ color: 'var(--text-1)' }}>
-                      {formatDuration(recorder.duration)}
-                    </span>
-                    <span className="text-xs"
-                      style={{ color: recorder.state === 'paused' ? 'var(--amber)' : 'var(--text-3)' }}>
-                      {recorder.state === 'paused' ? '已暂停' : '录音中'}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    {recorder.state === 'recording' ? (
-                      <button
-                        type="button"
-                        onClick={recorder.pause}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                        style={{ color: 'var(--text-2)', background: 'var(--bg-s2)', border: '1px solid var(--border)' }}
-                      >
-                        <Pause size={11} /> 暂停
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={recorder.resume}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                        style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}
-                      >
-                        <Play size={11} /> 继续
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={recorder.stop}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                      style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid #5a1e1e' }}
-                    >
-                      <Square size={11} /> 停止
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Done — brief state while useEffect propagates file to form */}
-              {recorder.state === 'done' && (
-                <>
-                  <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>处理录音中…</p>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Exam analysis */}
-        <div className="rounded-xl p-2.5" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
-          <label className="text-[11px] font-medium mb-2 block" style={{ color: 'var(--text-3)' }}>
-            试卷分析 <span className="ml-1 text-[10px]" style={{ color: 'var(--text-3)' }}>可选</span>
-          </label>
-
-          {/* Text input */}
-          <textarea
-            value={examAnalysis}
-            onChange={e => setExamAnalysis(e.target.value)}
-            placeholder="可粘贴本次试卷批改结果、得分点/失分点、错题类型等"
-            rows={4}
-            className="w-full rounded-lg px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors resize-y min-h-[92px]"
-            style={{ background: 'var(--bg-s1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
-            onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-            onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-          />
-
-          {/* File upload */}
-          <div className="mt-2">
-            <input
-              ref={examInputRef}
-              type="file"
-              hidden
-              accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) handleExamFile(f);
-                e.target.value = '';
-              }}
-            />
-            {examFile ? (
-              <div className="flex items-center gap-2 rounded-lg px-2.5 py-2 border"
-                style={{ background: 'var(--bg-s1)', borderColor: 'var(--border)' }}>
-                <FileText size={13} className="text-indigo-400 shrink-0" />
+            {file ? (
+              <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 border"
+                style={{ background: 'var(--bg-s2)', borderColor: 'var(--border)' }}>
+                {recordMode === 'record'
+                  ? <Mic size={16} className="text-red-400 shrink-0" />
+                  : <FileAudio size={16} className="text-indigo-400 shrink-0" />}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{examFile.name}</p>
-                  <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
-                    {(examFile.size / 1024 / 1024).toFixed(1)} MB
-                    {examFile.size > EXAM_DATAURL_MAX && (
-                      <span className="ml-1" style={{ color: 'var(--amber)' }}>· 文件较大，仅保存文件名</span>
-                    )}
+                  <p className="text-sm truncate" style={{ color: 'var(--text-1)' }}>{file.name}</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                    {recordMode === 'record'
+                      ? `${formatDuration(recordedDuration)} · 点击「创建任务」开始转写`
+                      : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setExamFile(null)}
-                  className="transition-colors shrink-0"
+                  onClick={() => { setFile(null); recorder.reset(); }}
+                  className="transition-colors"
                   style={{ color: 'var(--text-3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
                 >
-                  <X size={12} />
+                  <X size={14} />
                 </button>
               </div>
+
+            ) : recordMode === 'upload' ? (
+              <>
+                {!isElectron && (
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    hidden
+                    accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.ogg,.webm,.flac,.aac,.caf"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                  />
+                )}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="选择或拖入音频文件"
+                  className={`rounded-xl border-2 border-dashed transition-all cursor-pointer outline-none ${
+                    dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 focus-visible:border-indigo-500'
+                  }`}
+                  onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={openFilePicker}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openFilePicker();
+                    }
+                  }}
+                >
+                  <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
+                    <Upload size={20} className="text-slate-500" />
+                    <p className="text-xs text-slate-400">点击 · 拖入 · 或 ⌘V 粘贴音频文件</p>
+                    <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+                  </div>
+                </div>
+                {filePickError && (
+                  <p className="text-xs text-red-400 mt-1">{filePickError}</p>
+                )}
+              </>
+
             ) : (
-              <button
-                type="button"
-                onClick={() => examInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg w-full transition-colors"
-                style={{ color: 'var(--text-3)', border: '1px dashed var(--border)', background: 'var(--bg-s1)' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-              >
-                <Paperclip size={11} /> 上传试卷文件（PDF / 图片，最大 10 MB）
-              </button>
-            )}
-            {examFileSizeWarning && (
-              <p className="text-[10px] mt-1" style={{ color: 'var(--red)' }}>文件超过 10 MB，请选择更小的文件</p>
+              <div className="rounded-xl border-2 border-dashed flex flex-col items-center py-5 gap-3 transition-all"
+                style={{ borderColor: recorder.state === 'recording' ? 'var(--red)' : 'var(--border)' }}>
+
+                {recorder.state === 'idle' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={recorder.start}
+                      className="w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-105"
+                      style={{ background: 'var(--red-dim)', border: '2px solid var(--red)', color: 'var(--red)' }}
+                    >
+                      <Mic size={22} />
+                    </button>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>点击麦克风开始录音</p>
+                    {!recorder.isSupported && (
+                      <p className="text-xs" style={{ color: 'var(--amber)' }}>当前浏览器不支持录音</p>
+                    )}
+                    {recorder.error && (
+                      <p className="text-xs text-center px-4" style={{ color: 'var(--red)' }}>{recorder.error}</p>
+                    )}
+                  </>
+                )}
+
+                {recorder.state === 'requesting' && (
+                  <>
+                    <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>请求麦克风权限…</p>
+                  </>
+                )}
+
+                {(recorder.state === 'recording' || recorder.state === 'paused') && (
+                  <>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full"
+                        style={{
+                          background: recorder.state === 'recording' ? 'var(--red)' : 'var(--amber)',
+                          boxShadow: recorder.state === 'recording' ? '0 0 8px var(--red)' : undefined,
+                          animation: recorder.state === 'recording' ? 'pulse 1.2s ease-in-out infinite' : undefined,
+                        }}
+                      />
+                      <span className="text-xl font-mono font-semibold tabular-nums"
+                        style={{ color: 'var(--text-1)' }}>
+                        {formatDuration(recorder.duration)}
+                      </span>
+                      <span className="text-xs"
+                        style={{ color: recorder.state === 'paused' ? 'var(--amber)' : 'var(--text-3)' }}>
+                        {recorder.state === 'paused' ? '已暂停' : '录音中'}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      {recorder.state === 'recording' ? (
+                        <button
+                          type="button"
+                          onClick={recorder.pause}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                          style={{ color: 'var(--text-2)', background: 'var(--bg-s2)', border: '1px solid var(--border)' }}
+                        >
+                          <Pause size={11} /> 暂停
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={recorder.resume}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                          style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}
+                        >
+                          <Play size={11} /> 继续
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={recorder.stop}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                        style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid #5a1e1e' }}
+                      >
+                        <Square size={11} /> 停止
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {recorder.state === 'done' && (
+                  <>
+                    <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>处理录音中…</p>
+                  </>
+                )}
+              </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* ── 试卷分析专属：分析文本 + 文件上传 ── */}
+        {taskFormType === 'exam' && (
+          <div className="space-y-3">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
+                <FileText size={11} /> 试卷批改结果 <span className="text-slate-600 text-[10px] ml-1">可选</span>
+              </label>
+              <textarea
+                value={examAnalysis}
+                onChange={e => setExamAnalysis(e.target.value)}
+                placeholder="可粘贴本次试卷批改结果、得分点/失分点、错题类型等"
+                rows={5}
+                className="w-full rounded-lg px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors resize-y min-h-[108px]"
+                style={{ background: 'var(--bg-s1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
+                <Paperclip size={11} /> 试卷文件 <span className="text-slate-600 text-[10px] ml-1">可选，PDF / 图片 ≤ 10 MB</span>
+              </label>
+              <input
+                ref={examInputRef}
+                type="file"
+                hidden
+                accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleExamFile(f);
+                  e.target.value = '';
+                }}
+              />
+              {examFile ? (
+                <div className="flex items-center gap-2 rounded-lg px-2.5 py-2 border"
+                  style={{ background: 'var(--bg-s1)', borderColor: 'var(--border)' }}>
+                  <FileText size={13} className="text-indigo-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{examFile.name}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                      {(examFile.size / 1024 / 1024).toFixed(1)} MB
+                      {examFile.size > EXAM_DATAURL_MAX && (
+                        <span className="ml-1" style={{ color: 'var(--amber)' }}>· 文件较大，仅保存文件名</span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExamFile(null)}
+                    className="transition-colors shrink-0"
+                    style={{ color: 'var(--text-3)' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => examInputRef.current?.click()}
+                  className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg w-full transition-colors"
+                  style={{ color: 'var(--text-3)', border: '1px dashed var(--border)', background: 'var(--bg-s1)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+                >
+                  <Paperclip size={11} /> 上传试卷文件（PDF / 图片，最大 10 MB）
+                </button>
+              )}
+              {examFileSizeWarning && (
+                <p className="text-[10px] mt-1" style={{ color: 'var(--red)' }}>文件超过 10 MB，请选择更小的文件</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <button
           onClick={handleSubmit}
           disabled={!canSubmit}
           className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all"
         >
-          创建任务并开始转写
+          {taskFormType === 'exam' ? '创建试卷分析任务' : '创建任务并开始转写'}
         </button>
       </div>
     </div>
@@ -658,6 +708,12 @@ function TaskCard({
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
                   style={{ background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
                   {task.topic}
+                </span>
+              )}
+              {task.taskType === 'exam' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
+                  style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}>
+                  试卷
                 </span>
               )}
             </div>
@@ -980,7 +1036,7 @@ export function TaskPanel({
   const detailTask = tasks.find(t => t.id === detailId);
 
   const handleCreate = useCallback((
-    names: string[], topic: string, prompt: string, file: File, eng: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string,
+    names: string[], topic: string, prompt: string, file: File | null, eng: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string,
   ) => {
     onCreateTask(names, topic, prompt, file, eng, examAnalysis, examFile, examFileDataUrl);
     setView('list');
@@ -1030,7 +1086,7 @@ export function TaskPanel({
       <div className="flex items-center justify-between px-3 py-2.5 shrink-0"
         style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>转写任务</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>任务列表</span>
           {activeCount > 0 && (
             <span className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full"
               style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}>
@@ -1074,8 +1130,8 @@ export function TaskPanel({
               <FileAudio size={22} style={{ color: 'var(--text-3)' }} />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>暂无转写任务</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>点击「新建」上传音频文件</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>暂无任务</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>点击「新建」创建课堂记录或试卷分析</p>
             </div>
             <button
               onClick={() => setView('create')}

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
+import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
 import { hasPlatformLlm } from '../config/platformApi';
@@ -338,17 +338,25 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const date = new Date(selectedTask.createdAt);
     const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
     const taskNames = getStudentNames(selectedTask);
+    const isExamTask = selectedTask.taskType === 'exam';
     const namesLabel = taskNames.length > 1
-      ? `本次课学生（共 ${taskNames.length} 人）：${taskNames.join('、')}`
+      ? `${isExamTask ? '学生' : '本次课学生'}（共 ${taskNames.length} 人）：${taskNames.join('、')}`
       : `学生姓名：${taskNames[0] ?? selectedTask.studentName}`;
-    const meta = [`日期：${dateStr}`, namesLabel, selectedTask.topic ? `课程主题：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
+    const topicLabel = isExamTask ? '考试/作业名称' : '课程主题';
+    const meta = [`日期：${dateStr}`, namesLabel, selectedTask.topic ? `${topicLabel}：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
     const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
     const examAnalysisBlock = selectedTask.examAnalysis?.trim()
       ? `\n试卷分析：\n${selectedTask.examAnalysis.trim()}`
       : '';
-    // 优先使用工作区选择的 prompt，fallback 到全局设置 / 内置默认
-    const prompt = activePrompt.trim() || effectiveFeedbackPrompt(settings);
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}\n\n课堂录音转写内容：\n${transcript}`;
+    // 根据任务类型确定默认 prompt；用户在工作区选了非默认预设或自定义时，尊重其选择
+    const defaultPrompt = isExamTask ? EXAM_FEEDBACK_PROMPT : effectiveFeedbackPrompt(settings);
+    const prompt = (() => {
+      if (isCustomPrompt) return customPrompt.trim() || defaultPrompt;
+      if (promptPresetIdx === 0) return defaultPrompt; // default preset adapts to task type
+      return activePrompt.trim() || defaultPrompt;
+    })();
+    const transcriptSection = transcript ? `\n\n课堂录音转写内容：\n${transcript}` : '';
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${transcriptSection}`;
 
     try {
       await streamAI(
@@ -448,6 +456,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   }, [input, selectedId, byTask, settings, subscription, patchSession]);
 
   const hasFeedback = feedback.length > 0;
+  const isExamTask = selectedTask?.taskType === 'exam';
   /** 任务下拉里看到「正在生成」标记 */
   const generatingTaskIds = new Set(
     Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)
@@ -488,7 +497,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
                 {hasFeedback ? <RefreshCw size={isMobile ? 13 : 10} /> : <Sparkles size={isMobile ? 13 : 10} />}
-                {hasFeedback ? '重新生成' : '生成反馈'}
+                {hasFeedback ? '重新生成' : (isExamTask ? '生成分析' : '生成反馈')}
               </button>
             )
           )}
@@ -665,7 +674,9 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 {selectedTask.topic && <span style={{ color: 'var(--text-3)', fontWeight: 400 }}> · {selectedTask.topic}</span>}
               </p>
               <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
-                {selectedTask.segments.length} 段转写 · 点击生成课堂反馈
+                {isExamTask
+                  ? '试卷分析 · 点击生成分析报告'
+                  : `${selectedTask.segments.length} 段转写 · 点击生成课堂反馈`}
               </p>
             </div>
             <button onClick={generate}
@@ -679,7 +690,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-              <Sparkles size={isMobile ? 18 : 14} /> 生成课堂反馈
+              <Sparkles size={isMobile ? 18 : 14} /> {isExamTask ? '生成试卷分析' : '生成课堂反馈'}
             </button>
           </div>
         )}
@@ -688,7 +699,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         {isGenerating && !hasFeedback && (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-            <p className="text-sm" style={{ color: 'var(--text-2)' }}>正在生成课堂反馈…</p>
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>{isExamTask ? '正在生成试卷分析…' : '正在生成课堂反馈…'}</p>
           </div>
         )}
 

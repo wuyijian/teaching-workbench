@@ -474,7 +474,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     studentNames: string[],
     topic: string,
     prompt: string,
-    file: File,
+    file: File | null,
     engine: Task['engine'] = 'volcano',
     examAnalysis?: string,
     examFile?: Task['examFile'],
@@ -482,7 +482,8 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
   ) => {
     const id = uid();
     const names = studentNames.filter(n => n.trim());
-    const taskType: Task['taskType'] = examFile ? 'exam' : 'transcribe';
+    // exam tasks have no audio file; transcribe tasks always have one
+    const taskType: Task['taskType'] = file ? 'transcribe' : 'exam';
     const newTask: Task = {
       id,
       studentName: formatStudentNames(names),
@@ -492,20 +493,23 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       examFile,
       examFileDataUrl,
       taskType,
-      audioFileName: file.name,
-      audioFile: file,
-      status: 'queued',
-      progress: 0,
+      audioFileName: file?.name ?? '',
+      audioFile: file ?? undefined,
+      // exam tasks skip transcription and go directly to done
+      status: file ? 'queued' : 'done',
+      progress: file ? 0 : 100,
       segments: [],
       error: null,
       createdAt: Date.now(),
     };
     setTasks(prev => [newTask, ...prev]);
-    stopFlags.current.set(id, false);
-    pendingRef.current.set(id, file);
-    engineRef.current.set(id, engine);
-    queueRef.current.push(id);
-    drain();
+    if (file) {
+      stopFlags.current.set(id, false);
+      pendingRef.current.set(id, file);
+      engineRef.current.set(id, engine);
+      queueRef.current.push(id);
+      drain();
+    }
   }, [drain]);
 
   const cancelTask = useCallback((id: string) => {
