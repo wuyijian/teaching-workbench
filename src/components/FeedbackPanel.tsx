@@ -15,6 +15,7 @@ import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
 import { formatParentMessage } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { formatKnowledgeReferencesBlock, getKnowledgeReferences } from '../knowledgebase/search';
 
 // Resolve the effective prompt: settings override → built-in default
 export function effectiveFeedbackPrompt(settings: { feedbackPrompt?: string }): string {
@@ -222,10 +223,11 @@ interface GenSession {
   error: string | null;
   saved: boolean;
   copied: boolean;
+  kbRefCount: number;
 }
 const EMPTY_SESSION: GenSession = {
   feedback: '', followUps: [], isGenerating: false, isFollowUp: false,
-  error: null, saved: false, copied: false,
+  error: null, saved: false, copied: false, kbRefCount: 0,
 };
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -265,7 +267,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   const selectedTask = tasks.find(t => t.id === selectedId) ?? null;
   const cur = (selectedId && byTask[selectedId]) || EMPTY_SESSION;
-  const { feedback, followUps, isGenerating, isFollowUp, error, saved, copied } = cur;
+  const { feedback, followUps, isGenerating, isFollowUp, error, saved, copied, kbRefCount } = cur;
 
   /** 局部更新当前任务（或指定任务）的会话状态 */
   const patchSession = useCallback((id: string, patch: Partial<GenSession>) => {
@@ -337,7 +339,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     abortControllers.current.set(taskId, ctrl);
 
     patchSession(taskId, {
-      feedback: '', followUps: [], error: null, saved: false, isGenerating: true,
+      feedback: '', followUps: [], error: null, saved: false, isGenerating: true, kbRefCount: 0,
     });
 
     const transcript = selectedTask.segments.map(s => s.text).join('');
@@ -378,7 +380,14 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const examFileSection = examFileText.trim()
       ? `\n\n试卷原文（OCR 提取）：\n${examFileText.trim()}`
       : '';
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}`;
+    const shouldUseKnowledgeBase = settings.enableKnowledgeBase ?? true;
+    const kbQuery = [selectedTask.topic, notes.trim(), selectedTask.examAnalysis?.trim(), transcript.slice(0, 500)]
+      .filter(Boolean)
+      .join('\n');
+    const kbEntries = shouldUseKnowledgeBase ? getKnowledgeReferences(kbQuery, 5) : [];
+    const kbBlock = shouldUseKnowledgeBase ? formatKnowledgeReferencesBlock(kbEntries) : '';
+    patchSession(taskId, { kbRefCount: kbEntries.length });
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}${kbBlock}`;
 
     const userMessage: AiMessage = { role: 'user', content: userContent };
 
@@ -526,6 +535,13 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             )
           )}
         </div>
+        {(settings.enableKnowledgeBase ?? true) && kbRefCount > 0 && (
+          <div style={{ padding: '0 12px 8px' }}>
+            <p className="text-[11px]" style={{ color: 'var(--accent)' }}>
+              已引用 {kbRefCount} 条教研资料
+            </p>
+          </div>
+        )}
 
         {/* Prompt 选择区 */}
         {selectedTask && (

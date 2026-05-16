@@ -18,12 +18,16 @@ import { useOnboarding } from './hooks/useOnboarding';
 import { OnboardingGuide } from './components/OnboardingGuide';
 import { DEMO_LESSON } from './data/demoLesson';
 
-function loadUserPrefsFromStorage(): { language: string; feedbackPrompt?: string } {
+function loadUserPrefsFromStorage(): { language: string; feedbackPrompt?: string; enableKnowledgeBase?: boolean } {
   try {
     const raw = localStorage.getItem('tw-settings');
     if (!raw) return { language: 'zh-CN' };
-    const p = JSON.parse(raw) as { language?: string; feedbackPrompt?: string };
-    return { language: p.language || 'zh-CN', feedbackPrompt: p.feedbackPrompt };
+    const p = JSON.parse(raw) as { language?: string; feedbackPrompt?: string; enableKnowledgeBase?: boolean };
+    return {
+      language: p.language || 'zh-CN',
+      feedbackPrompt: p.feedbackPrompt,
+      enableKnowledgeBase: p.enableKnowledgeBase ?? true,
+    };
   } catch {
     return { language: 'zh-CN' };
   }
@@ -107,12 +111,14 @@ export default function App() {
     const next = mergePlatformApiSettings({
       language: s.language,
       feedbackPrompt: s.feedbackPrompt,
+      enableKnowledgeBase: s.enableKnowledgeBase,
     });
     setSettings(next);
     try {
       localStorage.setItem('tw-settings', JSON.stringify({
         language: next.language,
         feedbackPrompt: next.feedbackPrompt,
+        enableKnowledgeBase: next.enableKnowledgeBase ?? true,
       }));
     } catch { /* */ }
   }, []);

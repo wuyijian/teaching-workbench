@@ -13,9 +13,16 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
   const [feedbackPrompt, setFeedbackPrompt] = useState(
     () => settings.feedbackPrompt ?? FEEDBACK_PROMPT,
   );
+  const [enableKnowledgeBase, setEnableKnowledgeBase] = useState(
+    () => settings.enableKnowledgeBase ?? true,
+  );
 
   const handleSave = () => {
-    onSave({ ...settings, feedbackPrompt: feedbackPrompt === FEEDBACK_PROMPT ? undefined : feedbackPrompt });
+    onSave({
+      ...settings,
+      feedbackPrompt: feedbackPrompt === FEEDBACK_PROMPT ? undefined : feedbackPrompt,
+      enableKnowledgeBase,
+    });
     onClose();
   };
 
@@ -35,6 +42,30 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
 
         <div className="px-5 py-4 space-y-4 overflow-y-auto">
           <div>
+            <div className="flex items-center justify-between mb-2 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
+              <div>
+                <p className="text-xs text-slate-200 font-medium">启用知识库参考</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  生成反馈/分析时自动拼入杭州语文教研资料摘要
+                </p>
+              </div>
+              <label className="inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableKnowledgeBase}
+                  onChange={e => setEnableKnowledgeBase(e.target.checked)}
+                  className="sr-only"
+                />
+                <span
+                  className={`w-10 h-5 rounded-full relative transition-colors ${enableKnowledgeBase ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${enableKnowledgeBase ? 'translate-x-5' : 'translate-x-0.5'}`}
+                  />
+                </span>
+              </label>
+            </div>
+
             <div className="flex items-center justify-between mb-1.5">
               <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
                 <FileText size={12} /> 课堂反馈 Prompt

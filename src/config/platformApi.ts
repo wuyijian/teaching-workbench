@@ -86,11 +86,13 @@ export function hasPlatformVolcano(): boolean {
 export function mergePlatformApiSettings(prefs: {
   language: string;
   feedbackPrompt?: string;
+  enableKnowledgeBase?: boolean;
 }): Settings {
   const xf = getPlatformXfCredentials();
   return {
     language: prefs.language,
     feedbackPrompt: prefs.feedbackPrompt,
+    enableKnowledgeBase: prefs.enableKnowledgeBase ?? true,
     apiKey:    getPlatformLlmApiKey(),
     apiBaseUrl: getPlatformLlmBaseUrl(),
     model:     getPlatformLlmModel(),
