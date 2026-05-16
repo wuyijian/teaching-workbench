@@ -88,17 +88,44 @@ export function buildVolcanoBody(
   };
 }
 
-/** File → Base64 string（浏览器环境） */
+/**
+ * File → Base64 string（浏览器环境，分块读取避免 Safari OOM）
+ *
+ * readAsDataURL 会将整个文件一次性读入内存（100MB 文件 → ~133MB base64 字符串
+ * + 内部 ArrayBuffer），在 Safari 上容易触发 OOM。
+ * 改为每次读取 1.5 MB 切片（3 的倍数，保证 base64 块边界对齐），
+ * 每块编码后即可被 GC，峰值内存从 ~467MB 降至 ~270MB（100MB 文件）。
+ */
 export function fileToBase64(file: File): Promise<string> {
+  // 1.5 MB per chunk – must be a multiple of 3 for correct base64 alignment
+  const CHUNK = 3 * 512 * 1024;
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // result = "data:audio/xxx;base64,AAAA…" → 取逗号后面部分
-      resolve(result.split(',')[1] ?? '');
-    };
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsDataURL(file);
+    const parts: string[] = [];
+    let offset = 0;
+
+    function readNext() {
+      if (offset >= file.size) {
+        resolve(parts.join(''));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const u8 = new Uint8Array(reader.result as ArrayBuffer);
+        // Build binary string in 64KB sub-chunks to avoid call-stack limits
+        let bin = '';
+        for (let i = 0; i < u8.length; i += 65536) {
+          bin += String.fromCharCode(...u8.subarray(i, i + 65536));
+        }
+        parts.push(btoa(bin));
+        offset += CHUNK;
+        // Schedule next chunk asynchronously to let the GC breathe
+        setTimeout(readNext, 0);
+      };
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK));
+    }
+
+    readNext();
   });
 }
 
