@@ -36,6 +36,16 @@ interface Props {
   onSaveNotes: (taskId: string, notes: string) => void;
 }
 
+const MAX_PROMPT_TRANSCRIPT_CHARS = 30_000;
+const MAX_PROMPT_EXAM_ANALYSIS_CHARS = 12_000;
+const MAX_PROMPT_NOTES_CHARS = 8_000;
+const MAX_PROMPT_EXAM_FILE_CHARS = 50_000;
+
+function limitText(input: string, maxChars: number): { text: string; truncated: boolean } {
+  if (input.length <= maxChars) return { text: input, truncated: false };
+  return { text: input.slice(0, maxChars), truncated: true };
+}
+
 // ── 流式调用 AI ───────────────────────────────────────────────────────────────
 /** 解析一行 SSE 数据，返回 content chunk 或 null */
 function parseSseLine(line: string): string | null {
@@ -352,9 +362,12 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       : `学生姓名：${taskNames[0] ?? selectedTask.studentName}`;
     const topicLabel = isExamTask ? '考试/作业名称' : '课程主题';
     const meta = [`日期：${dateStr}`, namesLabel, selectedTask.topic ? `${topicLabel}：${selectedTask.topic}` : ''].filter(Boolean).join('\n');
-    const notesBlock = notes.trim() ? `\n教师补充信息：\n${notes.trim()}` : '';
-    const examAnalysisBlock = selectedTask.examAnalysis?.trim()
-      ? `\n试卷分析：\n${selectedTask.examAnalysis.trim()}`
+    const limitedNotes = limitText(notes.trim(), MAX_PROMPT_NOTES_CHARS);
+    const notesBlock = limitedNotes.text ? `\n教师补充信息：\n${limitedNotes.text}` : '';
+    const examAnalysisText = selectedTask.examAnalysis?.trim() ?? '';
+    const limitedExamAnalysis = limitText(examAnalysisText, MAX_PROMPT_EXAM_ANALYSIS_CHARS);
+    const examAnalysisBlock = limitedExamAnalysis.text
+      ? `\n试卷分析：\n${limitedExamAnalysis.text}`
       : '';
     // 根据任务类型确定默认 prompt；用户在工作区选了非默认预设或自定义时，尊重其选择
     const defaultPrompt = isExamTask ? EXAM_FEEDBACK_PROMPT : effectiveFeedbackPrompt(settings);
@@ -363,22 +376,28 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       if (promptPresetIdx === 0) return defaultPrompt; // default preset adapts to task type
       return activePrompt.trim() || defaultPrompt;
     })();
-    const transcriptSection = transcript ? `\n\n课堂录音转写内容：\n${transcript}` : '';
+    const limitedTranscript = limitText(transcript, MAX_PROMPT_TRANSCRIPT_CHARS);
+    const transcriptSection = limitedTranscript.text ? `\n\n课堂录音转写内容：\n${limitedTranscript.text}` : '';
 
     // 若任务关联了 Kimi file_id，先通过 /files/{id}/content 获取提取的文本，
     // 再以普通文字拼入 prompt（Kimi 不支持 file content part 格式）
     let examFileText = '';
+    let examFileTextTruncated = false;
     if (isExamTask && selectedTask.examKimiFileId) {
       try {
         const base = resolveApiBase(settings.apiBaseUrl);
-        examFileText = await getKimiFileContent(selectedTask.examKimiFileId, settings.apiKey, base);
+        const fileContent = await getKimiFileContent(selectedTask.examKimiFileId, settings.apiKey, base, {
+          maxChars: MAX_PROMPT_EXAM_FILE_CHARS,
+        });
+        examFileText = fileContent.text;
+        examFileTextTruncated = fileContent.truncated;
       } catch (err) {
         console.warn('[exam] 获取试卷文本失败，退回纯文字分析：', err);
       }
     }
 
     const examFileSection = examFileText.trim()
-      ? `\n\n试卷原文（OCR 提取）：\n${examFileText.trim()}`
+      ? `\n\n试卷原文（OCR 提取）：\n${examFileText.trim()}${examFileTextTruncated ? '\n\n[内容过长，已截断]' : ''}`
       : '';
     const shouldUseKnowledgeBase = settings.enableKnowledgeBase ?? true;
     const kbQuery = [selectedTask.topic, notes.trim(), selectedTask.examAnalysis?.trim(), transcript.slice(0, 500)]
@@ -387,7 +406,16 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const kbEntries = shouldUseKnowledgeBase ? getKnowledgeReferences(kbQuery, 5) : [];
     const kbBlock = shouldUseKnowledgeBase ? formatKnowledgeReferencesBlock(kbEntries) : '';
     patchSession(taskId, { kbRefCount: kbEntries.length });
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}${kbBlock}`;
+    const truncationHints: string[] = [];
+    if (limitedNotes.truncated) truncationHints.push(`教师补充信息已截断到 ${MAX_PROMPT_NOTES_CHARS} 字`);
+    if (limitedExamAnalysis.truncated) truncationHints.push(`试卷分析已截断到 ${MAX_PROMPT_EXAM_ANALYSIS_CHARS} 字`);
+    if (limitedTranscript.truncated) truncationHints.push(`转写内容已截断到 ${MAX_PROMPT_TRANSCRIPT_CHARS} 字`);
+    if (examFileTextTruncated) truncationHints.push(`试卷 OCR 原文已截断到 ${MAX_PROMPT_EXAM_FILE_CHARS} 字`);
+    const truncationBlock = truncationHints.length > 0
+      ? `\n\n（系统提示：为避免超长上下文导致内存/请求问题，${truncationHints.join('；')}。）`
+      : '';
+
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}${kbBlock}${truncationBlock}`;
 
     const userMessage: AiMessage = { role: 'user', content: userContent };
 

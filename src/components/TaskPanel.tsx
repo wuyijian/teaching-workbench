@@ -169,7 +169,6 @@ function CreateForm({
   const handleFile = useCallback((f: File) => setFile(f), []);
 
   const EXAM_MAX_BYTES = 10 * 1024 * 1024;
-  const EXAM_DATAURL_MAX = 2 * 1024 * 1024;
 
   const handleExamFile = useCallback((f: File) => {
     if (f.size > EXAM_MAX_BYTES) {
@@ -228,14 +227,6 @@ function CreateForm({
       const examFileMeta = examFile
         ? { name: examFile.name, size: examFile.size, type: examFile.type }
         : undefined;
-      let dataUrl: string | undefined;
-      if (examFile && examFile.size <= EXAM_DATAURL_MAX) {
-        dataUrl = await new Promise<string>(resolve => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(examFile);
-        });
-      }
       onSubmit(
         effectiveNames,
         topic.trim(),
@@ -244,7 +235,7 @@ function CreateForm({
         engine,
         normalizedExamAnalysis.length > 0 ? normalizedExamAnalysis : undefined,
         examFileMeta,
-        dataUrl,
+        undefined,
         examFile ?? undefined,
       );
     }
@@ -586,9 +577,7 @@ function CreateForm({
                     <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{examFile.name}</p>
                     <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
                       {(examFile.size / 1024 / 1024).toFixed(1)} MB
-                      {examFile.size > EXAM_DATAURL_MAX && (
-                        <span className="ml-1" style={{ color: 'var(--amber)' }}>· 文件较大，仅保存文件名</span>
-                      )}
+                      <span className="ml-1" style={{ color: 'var(--text-3)' }}>· 文件内容不写入本地存储</span>
                     </p>
                   </div>
                   <button

@@ -43,7 +43,8 @@ export async function getKimiFileContent(
   fileId: string,
   apiKey: string,
   baseUrl: string,
-): Promise<string> {
+  options?: { maxChars?: number },
+): Promise<{ text: string; truncated: boolean }> {
   const normalizedBase = baseUrl.replace(/\/$/, '');
   const resp = await fetch(`${normalizedBase}/files/${fileId}/content`, {
     method: 'GET',
@@ -55,7 +56,32 @@ export async function getKimiFileContent(
     throw new Error(`Kimi 文件内容获取失败（HTTP ${resp.status}）: ${text.slice(0, 200)}`);
   }
 
-  return resp.text();
+  const maxChars = Math.max(1, options?.maxChars ?? 50_000);
+  if (!resp.body) {
+    const text = await resp.text();
+    if (text.length <= maxChars) return { text, truncated: false };
+    return { text: text.slice(0, maxChars), truncated: true };
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let content = '';
+  let truncated = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    content += decoder.decode(value, { stream: true });
+    if (content.length > maxChars) {
+      content = content.slice(0, maxChars);
+      truncated = true;
+      await reader.cancel().catch(() => {});
+      break;
+    }
+  }
+  if (!truncated) content += decoder.decode();
+
+  return { text: content, truncated };
 }
 
 /**

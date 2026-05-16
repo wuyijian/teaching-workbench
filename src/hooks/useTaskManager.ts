@@ -50,18 +50,21 @@ type LegacyTaskFields = { archived?: boolean; archivedAt?: number };
 
 function saveTasks(tasks: Task[]) {
   try {
-    const serializable: SerializedTask[] = tasks.map(({ audioFile: _f, ...rest }) => ({
-      ...rest,
-      // 进行中的任务页面关闭后无法恢复，重置为错误状态
-      status: (rest.status === 'uploading' || rest.status === 'transcribing')
-        ? 'error'
-        : rest.status,
-      error: (rest.status === 'uploading' || rest.status === 'transcribing')
-        ? '页面刷新后转写中断，请重新上传'
-        : rest.error,
-      // Kimi 上传中途页面关闭 → 重置为 error，提示用户重新上传
-      examKimiUploadStatus: rest.examKimiUploadStatus === 'uploading' ? 'error' : rest.examKimiUploadStatus,
-    }));
+    const serializable: SerializedTask[] = tasks.map(({ audioFile: _f, ...rest }) => {
+      const { examFileDataUrl: _d, ...withoutExamDataUrl } = rest;
+      return {
+        ...withoutExamDataUrl,
+        // 进行中的任务页面关闭后无法恢复，重置为错误状态
+        status: (withoutExamDataUrl.status === 'uploading' || withoutExamDataUrl.status === 'transcribing')
+          ? 'error'
+          : withoutExamDataUrl.status,
+        error: (withoutExamDataUrl.status === 'uploading' || withoutExamDataUrl.status === 'transcribing')
+          ? '页面刷新后转写中断，请重新上传'
+          : withoutExamDataUrl.error,
+        // Kimi 上传中途页面关闭 → 重置为 error，提示用户重新上传
+        examKimiUploadStatus: withoutExamDataUrl.examKimiUploadStatus === 'uploading' ? 'error' : withoutExamDataUrl.examKimiUploadStatus,
+      };
+    });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
   } catch { /* quota exceeded 等异常静默忽略 */ }
 }
@@ -487,7 +490,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     engine: Task['engine'] = 'volcano',
     examAnalysis?: string,
     examFile?: Task['examFile'],
-    examFileDataUrl?: string,
+    _examFileDataUrl?: string,
     examFileRaw?: File,
   ) => {
     const id = uid();
@@ -502,7 +505,6 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       topic, prompt, engine,
       examAnalysis,
       examFile,
-      examFileDataUrl,
       taskType,
       audioFileName: file?.name ?? '',
       audioFile: file ?? undefined,
@@ -625,7 +627,7 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     const names = task.studentNames && task.studentNames.length > 0
       ? task.studentNames
       : [task.studentName];
-    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano', task.examAnalysis, task.examFile, task.examFileDataUrl);
+    createTask(names, task.topic, task.prompt, task.audioFile, task.engine ?? 'volcano', task.examAnalysis, task.examFile);
   }, [deleteTask, createTask]);
 
   const saveAISummary = useCallback((id: string, summary: string) => {
