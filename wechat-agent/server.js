@@ -11,8 +11,25 @@
 
 require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
+
+// ── 持久化配置（config.json） ─────────────────────────────────────────────────
+const CONFIG_PATH = path.join(__dirname, 'config.json');
+
+function readConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function writeConfig(data) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), 'utf8');
+}
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -92,10 +109,11 @@ app.post('/send-self', async (req, res) => {
   if (!message) {
     return res.status(400).json({ ok: false, error: '参数缺失：需要 message（消息内容）' });
   }
-  const selfNickname = process.env.WECLAW_SELF_NICKNAME;
+  // 优先读取 config.json 中绑定的账号，fallback 到环境变量
+  const selfNickname = readConfig().selfNickname || process.env.WECLAW_SELF_NICKNAME;
   if (!selfNickname) {
-    console.warn('[wechat-agent/send-self] WECLAW_SELF_NICKNAME 未配置，跳过自我通知');
-    return res.json({ ok: false, error: '未配置 WECLAW_SELF_NICKNAME，请在服务器 .env 中添加此变量' });
+    console.warn('[wechat-agent/send-self] 未绑定老师账号，跳过自我通知');
+    return res.json({ ok: false, error: '未绑定老师账号。请在微信向 ClawBot 发送「绑定老师」完成绑定，或在服务器 .env 中配置 WECLAW_SELF_NICKNAME' });
   }
   if (!process.env.WECLAW_SEND_URL) {
     console.warn('[wechat-agent/send-self] WECLAW_SEND_URL 未配置，无法推送');
@@ -109,6 +127,20 @@ app.post('/send-self', async (req, res) => {
     console.error('[wechat-agent/send-self] 发送失败:', err.message);
     return res.status(err.status ?? 502).json({ ok: false, error: err.message });
   }
+});
+
+// ── 绑定状态查询 ──────────────────────────────────────────────────────────────
+// GET /self-status → { bound: bool, nickname: string|null, source: "config"|"env"|null }
+app.get('/self-status', (_req, res) => {
+  const configNickname = readConfig().selfNickname;
+  const envNickname    = process.env.WECLAW_SELF_NICKNAME;
+  if (configNickname) {
+    return res.json({ bound: true, nickname: configNickname, source: 'config' });
+  }
+  if (envNickname) {
+    return res.json({ bound: true, nickname: envNickname, source: 'env' });
+  }
+  return res.json({ bound: false, nickname: null, source: null });
 });
 
 // ── 模型列表（weclaw 会查这个接口） ──────────────────────────────────────────
@@ -180,6 +212,16 @@ async function handleMessage(text, userId) {
   const cmd = text.trim();
 
   // ── 指令路由 ─────────────────────────────────────────────────────────────
+
+  // 绑定老师账号：把发送者（userId）保存到 config.json
+  if (/^(绑定老师|\/bind)$/i.test(cmd)) {
+    const cfg = readConfig();
+    cfg.selfNickname = userId;
+    writeConfig(cfg);
+    console.log(`[wechat-agent/bind] ✅ 已绑定老师账号: ${userId}`);
+    return `✅ 绑定成功！后续反馈通知将发送到您的微信。\n（绑定账号：${userId}）`;
+  }
+
   if (/^(帮助|help|\?|？)$/i.test(cmd)) {
     return HELP_TEXT;
   }
@@ -438,6 +480,7 @@ const STATUS_LABEL = {
 const HELP_TEXT = `🤖 **语文教学工作台助手**
 
 **支持的指令：**
+• 绑定老师 — 将您的微信绑定为接收反馈通知的账号
 • 任务列表 — 查看最近 7 天转写任务
 • 今日任务 — 查看今天的任务
 • 待反馈 — 列出未生成反馈的任务

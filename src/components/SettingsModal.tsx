@@ -14,6 +14,7 @@ interface Props {
 }
 
 type BotStatus = 'idle' | 'checking' | 'ok' | 'err';
+type SelfBindStatus = 'idle' | 'checking' | 'bound' | 'unbound' | 'err';
 
 export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props) {
   const [feedbackPrompt, setFeedbackPrompt] = useState(
@@ -26,6 +27,8 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   // ── WeChat state ──────────────────────────────────────────────────────────
   const [botStatus, setBotStatus] = useState<BotStatus>('idle');
   const [botErrMsg, setBotErrMsg] = useState('');
+  const [selfBindStatus, setSelfBindStatus] = useState<SelfBindStatus>('idle');
+  const [selfBindNickname, setSelfBindNickname] = useState<string | null>(null);
   const [contacts, setContacts] = useState<ParentContact[]>(() => getAllParentContacts());
   const [newStudent, setNewStudent] = useState('');
   const [newWechat, setNewWechat] = useState('');
@@ -68,6 +71,24 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     } catch (e: unknown) {
       setBotStatus('err');
       setBotErrMsg(e instanceof Error ? e.message : '连接失败');
+    }
+  }, []);
+
+  // ── Self bind status check ────────────────────────────────────────────────
+  const handleCheckSelfStatus = useCallback(async () => {
+    setSelfBindStatus('checking');
+    setSelfBindNickname(null);
+    try {
+      const resp = await fetch('/wechat-agent/self-status', { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
+        const data = await resp.json() as { bound: boolean; nickname: string | null };
+        setSelfBindStatus(data.bound ? 'bound' : 'unbound');
+        setSelfBindNickname(data.nickname);
+      } else {
+        setSelfBindStatus('err');
+      }
+    } catch {
+      setSelfBindStatus('err');
     }
   }, []);
 
@@ -221,6 +242,39 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     请确认 ClawBot 已在手机微信中激活，并联系管理员
                   </div>
                 )}
+              </div>
+
+              {/* Teacher self-binding */}
+              <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2">
+                <div>
+                  <p className="text-xs text-slate-300 font-medium">老师账号绑定（接收反馈通知）</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    向 ClawBot 发送<span className="text-slate-300 font-medium mx-1">「绑定老师」</span>即可完成绑定，接收反馈通知
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selfBindStatus !== 'idle' && (
+                    <span className={`flex-1 text-[11px] font-medium ${
+                      selfBindStatus === 'bound'    ? 'text-emerald-400' :
+                      selfBindStatus === 'checking' ? 'text-slate-400 animate-pulse' :
+                      selfBindStatus === 'unbound'  ? 'text-amber-400' :
+                      'text-red-400'
+                    }`}>
+                      {selfBindStatus === 'bound'    && `✅ 已绑定：${selfBindNickname}`}
+                      {selfBindStatus === 'checking' && '检查中…'}
+                      {selfBindStatus === 'unbound'  && '⚠️ 尚未绑定，请先向 ClawBot 发送「绑定老师」'}
+                      {selfBindStatus === 'err'      && '❌ 查询失败，请确认 ClawBot 服务正在运行'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCheckSelfStatus}
+                    disabled={selfBindStatus === 'checking'}
+                    className="ml-auto shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
+                  >
+                    检查绑定状态
+                  </button>
+                </div>
               </div>
 
               {/* Parent contacts */}
