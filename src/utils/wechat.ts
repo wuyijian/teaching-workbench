@@ -29,6 +29,26 @@ export function setParentContact(studentName: string, wechatName: string) {
   localStorage.setItem(PREFIX + studentName, JSON.stringify(rec));
 }
 
+export function deleteParentContact(studentName: string) {
+  localStorage.removeItem(PREFIX + studentName);
+}
+
+export function getAllParentContacts(): ParentContact[] {
+  const contacts: ParentContact[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(PREFIX)) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try { contacts.push(JSON.parse(raw) as ParentContact); } catch { /* skip */ }
+        }
+      }
+    }
+  } catch { /* */ }
+  return contacts.sort((a, b) => a.studentName.localeCompare(b.studentName, 'zh'));
+}
+
 // ─── 家长消息格式化 ───────────────────────────────────────────────────────────
 
 export function formatParentMessage(params: {

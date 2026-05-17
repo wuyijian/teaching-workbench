@@ -33,6 +33,8 @@ interface Props {
   selectedTaskId: string | null;
   onSaveToTask: (taskId: string, summary: string) => void;
   onSaveNotes: (taskId: string, notes: string) => void;
+  /** Opens the settings modal scrolled to the WeChat config section */
+  onOpenSettings?: () => void;
 }
 
 const MAX_PROMPT_TRANSCRIPT_CHARS = 30_000;
@@ -242,7 +244,7 @@ const EMPTY_SESSION: GenSession = {
 };
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
+export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes, onOpenSettings }: Props) {
   const subscription = useSubscription();
   const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -522,31 +524,44 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   // 同步已保存反馈到微信（通过 wechat-agent /send 接口）
   const handleWechatSync = useCallback(async () => {
     if (!selectedTask?.aiSummary) return;
-    const studentName = formatStudentNames(getStudentNames(selectedTask));
-    const contact = getParentContact(studentName);
-    if (!contact?.wechatName) {
-      setWechatSyncMsg({ type: 'err', text: '请先在设置中配置家长微信联系人（点击"发给家长"填写后保存）' });
+    const names = getStudentNames(selectedTask);
+
+    // Check every student has a contact configured
+    const missing = names.filter(n => !getParentContact(n)?.wechatName);
+    if (missing.length > 0) {
+      setWechatSyncMsg({ type: 'err', text: `请先在设置中配置家长微信联系人：${missing.join('、')}` });
       setTimeout(() => setWechatSyncMsg(null), 4000);
       return;
     }
+
     setWechatSyncing(true);
     setWechatSyncMsg(null);
     try {
-      const message = formatParentMessage({
-        studentName,
-        topic: selectedTask.topic,
-        feedback: selectedTask.aiSummary,
-      });
-      const resp = await fetch('/wechat-agent/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: contact.wechatName, message }),
-      });
-      const json = await resp.json() as { ok: boolean; error?: string };
-      if (json.ok) {
-        setWechatSyncMsg({ type: 'ok', text: '已发送' });
+      const errors: string[] = [];
+      for (const studentName of names) {
+        const contact = getParentContact(studentName)!;
+        const message = formatParentMessage({
+          studentName,
+          topic: selectedTask.topic,
+          feedback: selectedTask.aiSummary,
+        });
+        const resp = await fetch('/wechat-agent/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: contact.wechatName, message }),
+        });
+        const json = await resp.json() as { ok: boolean; error?: string };
+        if (!json.ok) {
+          errors.push(`${studentName}：${json.error ?? '发送失败'}`);
+        }
+      }
+      if (errors.length === 0) {
+        setWechatSyncMsg({
+          type: 'ok',
+          text: names.length > 1 ? `已发送给 ${names.length} 位家长` : '已发送',
+        });
       } else {
-        setWechatSyncMsg({ type: 'err', text: json.error ?? '发送失败，请检查 wechat-agent 配置' });
+        setWechatSyncMsg({ type: 'err', text: errors.join('；') });
       }
     } catch (e: unknown) {
       setWechatSyncMsg({ type: 'err', text: `网络错误：${e instanceof Error ? e.message : '请检查 wechat-agent 服务'}` });
@@ -558,6 +573,9 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   const hasFeedback = feedback.length > 0;
   const isExamTask = selectedTask?.taskType === 'exam';
+  const hasAllContacts = selectedTask
+    ? getStudentNames(selectedTask).every(n => !!getParentContact(n)?.wechatName)
+    : true;
   /** 任务下拉里看到「正在生成」标记 */
   const generatingTaskIds = new Set(
     Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)
@@ -880,6 +898,23 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                         ? <Check size={10} />
                         : <Send size={10} />}
                     {wechatSyncMsg?.type === 'ok' ? '已发送' : '同步微信'}
+                  </button>
+                )}
+                {selectedTask?.aiSummary && !hasAllContacts && onOpenSettings && (
+                  <button
+                    onClick={onOpenSettings}
+                    title="前往设置配置家长微信联系人"
+                    style={{
+                      ...btnStyle(false),
+                      color: 'var(--text-3)',
+                      fontSize: isMobile ? 11 : 10,
+                      padding: isMobile ? '8px 10px' : '5px 8px',
+                      borderStyle: 'dashed',
+                    }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#07C160'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
+                  >
+                    配置微信 →
                   </button>
                 )}
               </div>
