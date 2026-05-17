@@ -192,7 +192,7 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=yes" \
             ./dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
 
-      # 10b. 自动注入新增的 nginx location 块（如 /volcano-api/）。
+      # 10b. 自动注入新增的 nginx location 块（如 /volcano-api/、/wechat-agent/）。
       #      只在配置里没有该 location 时才追加，幂等可重复执行。
       #      不会覆盖 certbot 维护的 SSL/HTTPS server 块。
       - name: Patch nginx with new locations
@@ -201,6 +201,10 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/patch-volcano-nginx.sh"
           ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "chmod +x /tmp/patch-volcano-nginx.sh && /tmp/patch-volcano-nginx.sh"
+          scp -o StrictHostKeyChecking=yes deploy/patch-wechat-agent-nginx.sh \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/patch-wechat-agent-nginx.sh"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "chmod +x /tmp/patch-wechat-agent-nginx.sh && /tmp/patch-wechat-agent-nginx.sh"
 
       # 11. 修权限（rsync/scp 上传后目录可能 700，nginx user 读不到）+ 重载 Nginx
       - name: Fix permissions + reload Nginx
