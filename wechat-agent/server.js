@@ -180,17 +180,23 @@ app.get('/weclaw-status', requireApiToken, (req, res) => {
     if (!running) {
       return res.json({ running: false, loggedIn: false, nickname: null });
     }
-    // 进程在线：尝试 weclaw status 获取登录状态
-    exec('weclaw status 2>&1', { timeout: 5000 }, (err2, out2) => {
+    // 进程在线：读取 pm2 日志判断是否已登录
+    // weclaw 扫码后会输出 "Logged in" / "logged in" / "Login successful" 等字样
+    exec('pm2 logs weclaw --lines 50 --nostream 2>&1', { timeout: 8000 }, (err2, out2) => {
       if (err2 || !out2) {
-        // weclaw status 失败时，保守地认为进程在线但状态未知（当作已登录）
+        // 无法读取日志时，保守地认为进程在线但状态未知（当作已登录）
         return res.json({ running: true, loggedIn: true, nickname: null });
       }
       const text = out2.toString();
-      const loggedIn = /online|logged.?in|已登录|connected/i.test(text);
+      // 检测登录成功标志
+      const loggedIn = /logged.?in|login.?success|已登录|扫码成功|connected/i.test(text);
+      // 检测是否仍在等待扫码（尚未登录）
+      const waitingScan = /waiting.?for.?scan|scan.?this.?qr|等待扫码/i.test(text);
       const nicknameMatch = text.match(/(?:nickname|昵称|name)[:\s]+([^\n\r]+)/i);
       const nickname = nicknameMatch?.[1]?.trim() || null;
-      return res.json({ running: true, loggedIn, nickname });
+      // 若明确看到等待扫码且没有登录成功，则 loggedIn=false
+      const finalLoggedIn = loggedIn || (!waitingScan);
+      return res.json({ running: true, loggedIn: finalLoggedIn, nickname });
     });
   });
 });
@@ -221,9 +227,8 @@ app.post('/weclaw-restart', requireApiToken, (req, res) => {
       res.json(payload);
     }
 
-    // 以 weclaw login 启动，同时尝试传入 --qr-file 参数（部分版本支持）
-    // 若不支持该参数，weclaw 会忽略或报错并仍输出 URL 到 stdout/stderr
-    const args = ['login', '--qr-file', WECLAW_QR_FILE];
+    // weclaw login 直接输出 "QR URL: https://..." 到 stdout，捕获即可
+    const args = ['login'];
     const weclawProc = spawn('weclaw', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true, // 不绑定到本进程生命周期，登录完成后可继续跑
@@ -231,19 +236,17 @@ app.post('/weclaw-restart', requireApiToken, (req, res) => {
     weclawProc.unref();
 
     function checkOutput() {
-      // 优先查找微信登录 URL（最可靠的二维码来源）
-      const urlMatch = output.match(/https?:\/\/login\.weixin\.qq\.com\/qrcode\/[\w-]+/);
+      // 匹配 weclaw 输出的 "QR URL: https://..." 行
+      const urlMatch = output.match(/QR URL:\s*(https?:\/\/[^\s]+)/);
       if (urlMatch) {
-        respond({ ok: true, type: 'url', qr: urlMatch[0] });
+        respond({ ok: true, type: 'url', qr: urlMatch[1] });
         return true;
       }
-      // 其次查找二维码图片文件
-      if (fs.existsSync(WECLAW_QR_FILE)) {
-        try {
-          const b64 = fs.readFileSync(WECLAW_QR_FILE).toString('base64');
-          respond({ ok: true, type: 'image', qr: `data:image/png;base64,${b64}` });
-          return true;
-        } catch { /* 文件读取失败则继续等待 */ }
+      // 兜底：任意 liteapp.weixin.qq.com URL（无前缀标签时）
+      const fallbackMatch = output.match(/https?:\/\/liteapp\.weixin\.qq\.com\/[^\s]+/);
+      if (fallbackMatch) {
+        respond({ ok: true, type: 'url', qr: fallbackMatch[0] });
+        return true;
       }
       return false;
     }
