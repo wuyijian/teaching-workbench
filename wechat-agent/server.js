@@ -166,37 +166,41 @@ const WECLAW_QR_FILE = path.join(os.tmpdir(), 'weclaw-qr.png');
 // 实现：用 pm2 jlist 检查进程状态；用 weclaw status 获取登录信息（可选）
 app.get('/weclaw-status', requireApiToken, (req, res) => {
   exec('pm2 jlist', { timeout: 5000 }, (err, stdout) => {
-    if (err) {
-      return res.json({ running: false, loggedIn: false, nickname: null });
+    let pm2Running = false;
+    if (!err) {
+      try {
+        const list = JSON.parse(stdout || '[]');
+        const proc = list.find(p => p.name === 'weclaw');
+        pm2Running = proc?.pm2_env?.status === 'online';
+      } catch { /* ignore parse errors */ }
     }
-    let running = false;
-    try {
-      const list = JSON.parse(stdout || '[]');
-      const proc = list.find(p => p.name === 'weclaw');
-      running = proc?.pm2_env?.status === 'online';
-    } catch {
-      return res.json({ running: false, loggedIn: false, nickname: null });
+
+    if (pm2Running) {
+      // pm2 进程在线：读取 pm2 日志判断是否已登录
+      exec('pm2 logs weclaw --lines 50 --nostream 2>&1', { timeout: 8000 }, (err2, out2) => {
+        if (err2 || !out2) {
+          return res.json({ running: true, loggedIn: true, nickname: null });
+        }
+        const text = out2.toString();
+        const loggedIn = /logged.?in|login.?success|已登录|扫码成功|connected/i.test(text);
+        const waitingScan = /waiting.?for.?scan|scan.?this.?qr|等待扫码/i.test(text);
+        const nicknameMatch = text.match(/(?:nickname|昵称|name)[:\s]+([^\n\r]+)/i);
+        const nickname = nicknameMatch?.[1]?.trim() || null;
+        const finalLoggedIn = loggedIn || (!waitingScan);
+        return res.json({ running: true, loggedIn: finalLoggedIn, nickname });
+      });
+      return; // 等待 pm2 logs 回调
     }
-    if (!running) {
-      return res.json({ running: false, loggedIn: false, nickname: null });
-    }
-    // 进程在线：读取 pm2 日志判断是否已登录
-    // weclaw 扫码后会输出 "Logged in" / "logged in" / "Login successful" 等字样
-    exec('pm2 logs weclaw --lines 50 --nostream 2>&1', { timeout: 8000 }, (err2, out2) => {
-      if (err2 || !out2) {
-        // 无法读取日志时，保守地认为进程在线但状态未知（当作已登录）
+
+    // pm2 中没有 weclaw —— 检查是否存在游离进程（登录子进程或手动启动的进程）
+    exec("pgrep -f 'weclaw' 2>/dev/null || ps aux 2>/dev/null | grep -v grep | grep weclaw | awk '{print $2}'", { timeout: 5000 }, (pgrepErr, pgrepOut) => {
+      const pids = (pgrepOut || '').trim().split('\n').filter(Boolean);
+      if (pids.length > 0) {
+        // 游离进程存在（消息仍可转发），视为 running
+        console.log(`[weclaw-status] 检测到游离 weclaw 进程（pids: ${pids.join(',')}），非 pm2 管理`);
         return res.json({ running: true, loggedIn: true, nickname: null });
       }
-      const text = out2.toString();
-      // 检测登录成功标志
-      const loggedIn = /logged.?in|login.?success|已登录|扫码成功|connected/i.test(text);
-      // 检测是否仍在等待扫码（尚未登录）
-      const waitingScan = /waiting.?for.?scan|scan.?this.?qr|等待扫码/i.test(text);
-      const nicknameMatch = text.match(/(?:nickname|昵称|name)[:\s]+([^\n\r]+)/i);
-      const nickname = nicknameMatch?.[1]?.trim() || null;
-      // 若明确看到等待扫码且没有登录成功，则 loggedIn=false
-      const finalLoggedIn = loggedIn || (!waitingScan);
-      return res.json({ running: true, loggedIn: finalLoggedIn, nickname });
+      return res.json({ running: false, loggedIn: false, nickname: null });
     });
   });
 });
@@ -215,50 +219,76 @@ app.post('/weclaw-restart', requireApiToken, (req, res) => {
 
     let output = '';
     let responded = false;
+    let qrRespondedOk = false;
+    let daemonized = false;
     let timeoutId;
-
-    function respond(payload) {
-      if (responded) return;
-      responded = true;
-      clearTimeout(timeoutId);
-      // 清理事件监听，避免内存泄漏
-      weclawProc.stdout.removeAllListeners();
-      weclawProc.stderr.removeAllListeners();
-      res.json(payload);
-    }
 
     // weclaw login 直接输出 "QR URL: https://..." 到 stdout，捕获即可
     const args = ['login'];
     const weclawProc = spawn('weclaw', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true, // 不绑定到本进程生命周期，登录完成后可继续跑
+      detached: false, // 保持绑定，以便继续监听登录完成事件
     });
-    weclawProc.unref();
 
-    function checkOutput() {
+    function respond(payload) {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeoutId);
+      res.json(payload);
+    }
+
+    function checkForQr() {
       // 匹配 weclaw 输出的 "QR URL: https://..." 行
       const urlMatch = output.match(/QR URL:\s*(https?:\/\/[^\s]+)/);
       if (urlMatch) {
+        qrRespondedOk = true;
         respond({ ok: true, type: 'url', qr: urlMatch[1] });
         return true;
       }
       // 兜底：任意 liteapp.weixin.qq.com URL（无前缀标签时）
       const fallbackMatch = output.match(/https?:\/\/liteapp\.weixin\.qq\.com\/[^\s]+/);
       if (fallbackMatch) {
+        qrRespondedOk = true;
         respond({ ok: true, type: 'url', qr: fallbackMatch[0] });
         return true;
       }
       return false;
     }
 
-    weclawProc.stdout.on('data', data => {
+    function checkForLoginSuccess() {
+      // 检测登录成功关键词
+      return /logged.?in|login.?success|successfully|已登录|扫码成功|connected/i.test(output);
+    }
+
+    function daemonizeWeclaw() {
+      if (daemonized) return;
+      daemonized = true;
+      console.log('[weclaw-restart] 检测到登录成功，将 weclaw 纳入 pm2 管理...');
+      // 先结束 login 子进程，再通过 pm2 以守护进程方式启动 weclaw
+      try { weclawProc.kill(); } catch { /* 进程可能已退出 */ }
+      exec('pm2 start weclaw --name weclaw -- start && pm2 save', { timeout: 15000 }, (err, stdout, stderr) => {
+        if (err) {
+          console.error('[weclaw-restart] pm2 start 失败:', err.message, stderr);
+        } else {
+          console.log('[weclaw-restart] ✅ weclaw 已作为 pm2 守护进程启动');
+        }
+      });
+    }
+
+    function onData(data) {
       output += data.toString();
-      checkOutput();
-    });
-    weclawProc.stderr.on('data', data => {
-      output += data.toString();
-      checkOutput();
-    });
+      if (!checkForQr() && !qrRespondedOk) {
+        // 还没获取到 QR，继续等待
+        return;
+      }
+      // QR 已发出，继续监听登录完成
+      if (qrRespondedOk && checkForLoginSuccess()) {
+        daemonizeWeclaw();
+      }
+    }
+
+    weclawProc.stdout.on('data', onData);
+    weclawProc.stderr.on('data', onData);
 
     weclawProc.on('error', err => {
       respond({
@@ -268,9 +298,19 @@ app.post('/weclaw-restart', requireApiToken, (req, res) => {
       });
     });
 
+    // 进程意外退出时，若尚未响应则给出兜底回复
+    weclawProc.on('exit', (code) => {
+      console.log(`[weclaw-restart] weclaw login 进程退出，code=${code}`);
+      respond({
+        ok: false,
+        type: 'manual',
+        message: '未能自动获取二维码。请在服务器上手动运行：weclaw login，扫码后点击「检查连接状态」。',
+      });
+    });
+
     // 15 秒超时：二维码通常在启动后 1-3 秒出现
     timeoutId = setTimeout(() => {
-      if (!checkOutput()) {
+      if (!checkForQr()) {
         respond({
           ok: false,
           type: 'manual',
