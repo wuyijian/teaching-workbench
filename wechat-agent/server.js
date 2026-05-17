@@ -426,6 +426,7 @@ async function callKimi(userMsg, isSystemRole = false) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMsg },
       ],
+      temperature: 1,
       max_tokens: 2000,
     }),
   });

@@ -221,7 +221,7 @@ jobs:
       #     排除 node_modules（服务器上 npm install）和 config.json（含绑定数据，不可覆盖）
       - name: Deploy wechat-agent
         run: |
-          AGENT_PATH=/root/wechat-agent
+          AGENT_PATH=/opt/teaching-workbench/wechat-agent
           ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${AGENT_PATH}'"
           rsync -avz \
             --exclude='node_modules' \
