@@ -383,17 +383,19 @@ async function transcribeVolcano(
   }
 }
 
+const MAX_CONCURRENT = 5;
+
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useTaskManager(settings: Settings, language: string, quotaApi?: QuotaApi) {
   const [tasks, setTasks] = useState<Task[]>(() => INITIAL_DATA.tasks);
   const [archivedStudents, setArchivedStudents] = useState<ArchivedStudentsState>(() => INITIAL_DATA.mergedArchived);
 
   // 队列相关 ref（不触发 re-render，避免竞态）
-  const stopFlags        = useRef(new Map<string, boolean>());
-  const queueRef         = useRef<string[]>([]);          // FIFO 待执行 ID 列表
-  const runningRef       = useRef(false);                 // 当前是否有任务在执行
-  const runningTaskIdRef = useRef<string | null>(null);   // 当前执行的任务 ID
-  const pendingRef       = useRef(new Map<string, File>());
+  const stopFlags           = useRef(new Map<string, boolean>());
+  const queueRef            = useRef<string[]>([]);                  // FIFO 待执行 ID 列表
+  const runningCountRef     = useRef(0);                             // 当前并发数
+  const runningTaskIdsRef   = useRef(new Set<string>());             // 正在执行的任务 ID 集合
+  const pendingRef          = useRef(new Map<string, File>());
   const engineRef        = useRef(new Map<string, Task['engine']>()); // 每个任务的转写引擎
   // taskId -> Kimi file_id，用于 deleteTask 时清理远端文件（含从 localStorage 恢复的旧任务）
   const kimiFileIdsRef   = useRef(new Map<string, string>(
@@ -417,68 +419,72 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t));
   }, []);
 
-  /** 从队列头取下一个任务并执行；执行完后递归调用自身处理下一个 */
-  const drain = useCallback(async () => {
-    if (runningRef.current) return;
-
-    // 跳过已被取消的任务
-    while (queueRef.current.length > 0) {
-      const head = queueRef.current[0];
-      if (stopFlags.current.get(head) !== true && pendingRef.current.has(head)) break;
-      queueRef.current.shift();
-    }
-    if (!queueRef.current.length) return;
-
-    const id = queueRef.current.shift()!;
-    const file = pendingRef.current.get(id)!;
-    runningRef.current = true;
-    runningTaskIdRef.current = id;
-
-    const s = settingsRef.current;
-    const l = languageRef.current;
-    const onProgress = (p: number) => patch(id, { progress: p });
-    const shouldStop  = () => stopFlags.current.get(id) === true;
-
-    // ── 配额守门：估算时长，未登录 / 额度不足直接终止 ──────────────────────
-    const qApi = quotaApiRef.current;
-    const estSec = await estimateDurationSec(file);
-    const estMin = Math.max(1, Math.ceil(estSec / 60));
-    if (qApi && !qApi.requireTranscribe(estMin)) {
-      patch(id, { status: 'error', error: '配额不足或未登录，请先登录或升级方案' });
-      pendingRef.current.delete(id);
-      stopFlags.current.delete(id);
-      runningRef.current = false;
-      drain();
-      return;
-    }
-
-    patch(id, { status: 'uploading', progress: 5 });
-
-    try {
-      const engine = engineRef.current.get(id) ?? 'volcano';
-      const segments = engine === 'volcano'
-        ? await transcribeVolcano(file, l, onProgress, shouldStop)
-        : await transcribeXfyun(file, s, l, onProgress, shouldStop);
-      if (!stopFlags.current.get(id)) {
-        patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
-        // 扣量：使用估算时长（来自音频元数据，已是真实总长）
-        if (qApi) await qApi.recordUsage(estMin);
+  /** 循环启动队列任务，直到并发槽占满（MAX_CONCURRENT）或队列为空 */
+  const drain = useCallback(() => {
+    while (runningCountRef.current < MAX_CONCURRENT) {
+      // 跳过已被取消的任务
+      while (queueRef.current.length > 0) {
+        const head = queueRef.current[0];
+        if (stopFlags.current.get(head) !== true && pendingRef.current.has(head)) break;
+        queueRef.current.shift();
       }
-    } catch (err: unknown) {
-      if (!stopFlags.current.get(id)) {
-        patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' });
-      }
-    } finally {
-      pendingRef.current.delete(id);
-      stopFlags.current.delete(id);
-      engineRef.current.delete(id);
-      // deleteTask 删除正在运行的任务时会提前重置 runningRef（runningTaskIdRef 同步清空）。
-      // 此处只有仍是"当前任务"时才重置，防止 deleteTask 已触发 drain 后再次触发导致并发执行。
-      if (runningTaskIdRef.current === id) {
-        runningRef.current = false;
-        runningTaskIdRef.current = null;
-        drain(); // 处理下一个
-      }
+      if (!queueRef.current.length) return;
+
+      const id = queueRef.current.shift()!;
+      const file = pendingRef.current.get(id)!;
+      runningCountRef.current++;
+      runningTaskIdsRef.current.add(id);
+
+      const s = settingsRef.current;
+      const l = languageRef.current;
+      const onProgress = (p: number) => patch(id, { progress: p });
+      const shouldStop  = () => stopFlags.current.get(id) === true;
+
+      // 以 void 启动，不阻塞循环，让 while 继续填满并发槽
+      void (async () => {
+        // ── 配额守门：估算时长，未登录 / 额度不足直接终止 ──────────────────
+        const qApi = quotaApiRef.current;
+        const estSec = await estimateDurationSec(file);
+        const estMin = Math.max(1, Math.ceil(estSec / 60));
+        if (qApi && !qApi.requireTranscribe(estMin)) {
+          patch(id, { status: 'error', error: '配额不足或未登录，请先登录或升级方案' });
+          pendingRef.current.delete(id);
+          stopFlags.current.delete(id);
+          runningCountRef.current--;
+          runningTaskIdsRef.current.delete(id);
+          drain();
+          return;
+        }
+
+        patch(id, { status: 'uploading', progress: 5 });
+
+        try {
+          const engine = engineRef.current.get(id) ?? 'volcano';
+          const segments = engine === 'volcano'
+            ? await transcribeVolcano(file, l, onProgress, shouldStop)
+            : await transcribeXfyun(file, s, l, onProgress, shouldStop);
+          if (!stopFlags.current.get(id)) {
+            patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
+            // 扣量：使用估算时长（来自音频元数据，已是真实总长）
+            if (qApi) await qApi.recordUsage(estMin);
+          }
+        } catch (err: unknown) {
+          if (!stopFlags.current.get(id)) {
+            patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' });
+          }
+        } finally {
+          pendingRef.current.delete(id);
+          stopFlags.current.delete(id);
+          engineRef.current.delete(id);
+          // deleteTask 删除正在运行的任务时会提前递减计数并从集合移除。
+          // 此处只有仍在集合中时才递减，防止重复递减导致计数错误。
+          if (runningTaskIdsRef.current.has(id)) {
+            runningCountRef.current--;
+            runningTaskIdsRef.current.delete(id);
+            drain(); // 补位：尝试启动下一个任务
+          }
+        }
+      })();
     }
   }, [patch]);
 
@@ -585,15 +591,14 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       }
       return next;
     });
-    // 关键修复：删除的是正在执行的任务时，立即重置运行状态
-    // （不等轮询间隔过期才检测到 shouldStop，最长可能等 12 秒）
-    // runningTaskIdRef 同步清空，防止该任务的 finally 块再次调用 drain 造成并发
-    if (runningTaskIdRef.current === id) {
-      runningRef.current = false;
-      runningTaskIdRef.current = null;
+    // 关键修复：删除的是正在执行的任务时，立即递减并发计数并从集合移除，
+    // 防止该任务的 finally 块检测到 id 仍在集合中而重复递减。
+    if (runningTaskIdsRef.current.has(id)) {
+      runningCountRef.current--;
+      runningTaskIdsRef.current.delete(id);
     }
-    // 现在无论原来是否有任务在跑，都能正确触发 drain
-    if (!runningRef.current) drain();
+    // 无论是否有任务在跑，都触发 drain 以利用空出的并发槽
+    drain();
   }, [drain]);
 
   /**
