@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, FileText, RotateCcw, Bot, Wifi, WifiOff, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound } from 'lucide-react';
+import { X, FileText, RotateCcw, Bot, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound, ChevronDown, ChevronRight } from 'lucide-react';
 import { FEEDBACK_PROMPT } from './TaskPanel';
 import type { Settings } from '../types';
 import { getAllParentContacts, setParentContact, deleteParentContact } from '../utils/wechat';
@@ -13,7 +13,6 @@ interface Props {
   openAtWechat?: boolean;
 }
 
-type BotStatus = 'idle' | 'checking' | 'ok' | 'err';
 type SelfBindStatus = 'idle' | 'checking' | 'bound' | 'unbound' | 'err';
 type WeclawStatus = 'idle' | 'checking' | 'online_loggedin' | 'online_loggedout' | 'stopped' | 'err';
 
@@ -31,8 +30,6 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   );
 
   // ── WeChat state ──────────────────────────────────────────────────────────
-  const [botStatus, setBotStatus] = useState<BotStatus>('idle');
-  const [botErrMsg, setBotErrMsg] = useState('');
   const [selfBindStatus, setSelfBindStatus] = useState<SelfBindStatus>('idle');
   const [selfBindNickname, setSelfBindNickname] = useState<string | null>(null);
   const [contacts, setContacts] = useState<ParentContact[]>(() => getAllParentContacts());
@@ -40,6 +37,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   const [newWechat, setNewWechat] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editWechat, setEditWechat] = useState('');
+  const [parentPanelOpen, setParentPanelOpen] = useState(false);
 
   // ── weclaw login state ────────────────────────────────────────────────────
   const [weclawStatus, setWeclawStatus] = useState<WeclawStatus>('idle');
@@ -72,24 +70,6 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     });
     onClose();
   };
-
-  // ── Bot connection test ───────────────────────────────────────────────────
-  const handleTestBot = useCallback(async () => {
-    setBotStatus('checking');
-    setBotErrMsg('');
-    try {
-      const resp = await fetch('/wechat-agent/health', { signal: AbortSignal.timeout(5000) });
-      if (resp.ok) {
-        setBotStatus('ok');
-      } else {
-        setBotStatus('err');
-        setBotErrMsg(`HTTP ${resp.status}`);
-      }
-    } catch (e: unknown) {
-      setBotStatus('err');
-      setBotErrMsg(e instanceof Error ? e.message : '连接失败');
-    }
-  }, []);
 
   // ── Self bind status check ────────────────────────────────────────────────
   const handleCheckSelfStatus = useCallback(async () => {
@@ -169,7 +149,6 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
         setWeclawQr({ type: 'manual', data: data.message ?? '请在服务器上手动运行 weclaw login' });
         setWeclawStatus('stopped');
       }
-      // 轮询 /weclaw-status 直至检测到登录成功
       weclawPollRef.current = setInterval(fetchWeclawStatus, 3000);
     } catch (e) {
       setWeclawQr({
@@ -182,7 +161,6 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     }
   }, [weclawToken, stopWeclawPoll, fetchWeclawStatus]);
 
-  // 清理轮询（组件卸载时）
   useEffect(() => () => stopWeclawPoll(), [stopWeclawPoll]);
 
   // ── Contact CRUD ──────────────────────────────────────────────────────────
@@ -214,6 +192,8 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     }
     setEditingKey(null);
   };
+
+  const weclawConnected = weclawStatus === 'online_loggedin';
 
   return (
     <div
@@ -295,306 +275,328 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
               <span className="text-xs font-semibold text-slate-200">微信配置</span>
             </div>
 
-            <div className="px-3 py-3 space-y-4">
-              {/* Bot status row */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-slate-300 font-medium">微信机器人（ClawBot）</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      通过 ClawBot 自动发送反馈消息给家长
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {botStatus !== 'idle' && (
-                      <span className={`flex items-center gap-1 text-[11px] font-medium ${
-                        botStatus === 'ok' ? 'text-emerald-400' :
-                        botStatus === 'checking' ? 'text-slate-400' :
-                        'text-red-400'
-                      }`}>
-                        {botStatus === 'ok'
-                          ? <><Wifi size={11} /> 已连接</>
-                          : botStatus === 'checking'
-                          ? <span className="animate-pulse">检测中…</span>
-                          : <><WifiOff size={11} /> 未连接</>}
-                      </span>
+            <div className="divide-y divide-slate-700/50">
+
+              {/* ── Step 1: Connect weclaw ─────────────────────────────── */}
+              <div className="px-3 py-3 space-y-2">
+                {/* Step label */}
+                <div className="flex items-center gap-2">
+                  <StepBadge
+                    n="①"
+                    done={weclawConnected}
+                    active={!weclawConnected}
+                  />
+                  <span className="text-xs font-medium text-slate-200">连接微信</span>
+                  <span className="ml-auto text-[11px]">
+                    {weclawStatus === 'online_loggedin' && (
+                      <span className="text-emerald-400">✅ 已连接{weclawNickname ? `：${weclawNickname}` : ''}</span>
                     )}
+                    {weclawStatus === 'online_loggedout' && (
+                      <span className="text-amber-400">⚠️ 等待扫码</span>
+                    )}
+                    {weclawStatus === 'stopped' && (
+                      <span className="text-slate-500">⭕ 未运行</span>
+                    )}
+                    {weclawStatus === 'err' && (
+                      <span className="text-red-400">❌ 连接失败</span>
+                    )}
+                    {weclawStatus === 'checking' && (
+                      <span className="text-slate-400 animate-pulse">检测中…</span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Status card */}
+                <div className={`rounded-lg border px-3 py-2.5 space-y-2.5 ${
+                  weclawConnected
+                    ? 'border-emerald-700/40 bg-emerald-950/20'
+                    : 'border-amber-700/30 bg-amber-950/15'
+                }`}>
+                  <p className="text-[11px] text-slate-400">
+                    扫码后 weclaw 将连接到老师微信，自动接收并中转消息
+                  </p>
+
+                  {/* QR code display */}
+                  {weclawQr && (
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 flex flex-col items-center gap-2">
+                      {(weclawQr.type === 'url' || weclawQr.type === 'image') && (
+                        <>
+                          <img
+                            src={
+                              weclawQr.type === 'url'
+                                ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(weclawQr.data)}`
+                                : weclawQr.data
+                            }
+                            alt="微信登录二维码"
+                            className="w-44 h-44 rounded-lg"
+                          />
+                          <p className="text-[11px] text-slate-400 text-center">
+                            请用微信扫码，完成后自动检测连接状态
+                          </p>
+                        </>
+                      )}
+                      {weclawQr.type === 'manual' && (
+                        <p className="text-[11px] text-amber-400 text-center leading-relaxed">
+                          {weclawQr.data}
+                        </p>
+                      )}
+                      {weclawStatus === 'online_loggedout' && (
+                        <p className="text-[11px] text-slate-500 animate-pulse">
+                          轮询检测登录状态中…
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2">
+                    {weclawConnected ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCheckWeclawStatus}
+                          className="px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+                        >
+                          检查状态
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRestartWeclaw}
+                          disabled={weclawRestarting}
+                          className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors disabled:opacity-50"
+                        >
+                          {weclawRestarting && <RefreshCw size={10} className="animate-spin" />}
+                          重新连接
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRestartWeclaw}
+                        disabled={weclawRestarting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-md bg-[#07C160]/10 border border-[#07C160]/30 text-[#07C160] hover:bg-[#07C160]/20 transition-colors disabled:opacity-50 w-full justify-center"
+                      >
+                        {weclawRestarting
+                          ? <><RefreshCw size={11} className="animate-spin" /> 正在获取二维码…</>
+                          : <><QrCode size={11} /> 扫码连接微信</>}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* API Token (optional) */}
+                  <div className="flex items-center gap-1.5">
+                    <KeyRound size={10} className="text-slate-500 shrink-0" />
+                    <input
+                      type={showWeclawToken ? 'text' : 'password'}
+                      value={weclawToken}
+                      onChange={e => {
+                        setWeclawToken(e.target.value);
+                        localStorage.setItem('weclaw_control_token', e.target.value);
+                      }}
+                      placeholder="API Token（服务器设置了 WECLAW_API_TOKEN 时填写）"
+                      className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded px-2 py-1 text-[11px] text-slate-300 placeholder-slate-600 outline-none transition-colors font-mono"
+                    />
                     <button
                       type="button"
-                      onClick={handleTestBot}
-                      disabled={botStatus === 'checking'}
-                      className="px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
+                      onClick={() => setShowWeclawToken(v => !v)}
+                      className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors shrink-0 px-1"
                     >
-                      测试连接
+                      {showWeclawToken ? '隐藏' : '显示'}
                     </button>
                   </div>
                 </div>
-                {botStatus === 'err' && (
-                  <div className="mt-2 rounded-lg px-3 py-2 bg-red-950/40 border border-red-800/40 text-[11px] text-red-400">
-                    {botErrMsg && <span className="font-mono mr-1.5">({botErrMsg})</span>}
-                    请确认 ClawBot 已在手机微信中激活，并联系管理员
-                  </div>
-                )}
               </div>
 
-              {/* Teacher self-binding */}
-              <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2">
-                <div>
-                  <p className="text-xs text-slate-300 font-medium">老师账号绑定（接收反馈通知）</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    向 ClawBot 发送<span className="text-slate-300 font-medium mx-1">「绑定老师」</span>即可完成绑定，接收反馈通知
-                  </p>
-                </div>
+              {/* ── Step 2: Teacher binding ─────────────────────────────── */}
+              <div className={`px-3 py-3 space-y-2 transition-opacity duration-200 ${weclawConnected ? '' : 'opacity-40 pointer-events-none'}`}>
                 <div className="flex items-center gap-2">
-                  {selfBindStatus !== 'idle' && (
-                    <span className={`flex-1 text-[11px] font-medium ${
-                      selfBindStatus === 'bound'    ? 'text-emerald-400' :
-                      selfBindStatus === 'checking' ? 'text-slate-400 animate-pulse' :
-                      selfBindStatus === 'unbound'  ? 'text-amber-400' :
-                      'text-red-400'
-                    }`}>
-                      {selfBindStatus === 'bound'    && `✅ 已绑定：${selfBindNickname}`}
-                      {selfBindStatus === 'checking' && '检查中…'}
-                      {selfBindStatus === 'unbound'  && '⚠️ 尚未绑定，请先向 ClawBot 发送「绑定老师」'}
-                      {selfBindStatus === 'err'      && '❌ 查询失败，请确认 ClawBot 服务正在运行'}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleCheckSelfStatus}
-                    disabled={selfBindStatus === 'checking'}
-                    className="ml-auto shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
-                  >
-                    检查绑定状态
-                  </button>
+                  <StepBadge
+                    n="②"
+                    done={selfBindStatus === 'bound'}
+                    active={weclawConnected && selfBindStatus !== 'bound'}
+                    locked={!weclawConnected}
+                  />
+                  <span className="text-xs font-medium text-slate-200">绑定老师身份</span>
+                  <span className="text-[10px] text-slate-500">（接收反馈通知）</span>
+                  <span className="ml-auto text-[11px]">
+                    {selfBindStatus === 'bound' && (
+                      <span className="text-emerald-400">✅ 已绑定：{selfBindNickname}</span>
+                    )}
+                    {selfBindStatus === 'unbound' && (
+                      <span className="text-amber-400">⚠️ 未绑定</span>
+                    )}
+                    {selfBindStatus === 'err' && (
+                      <span className="text-red-400">❌ 查询失败</span>
+                    )}
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2">
+                  <p className="text-[11px] text-slate-400">
+                    向{' '}
+                    <span className="text-slate-200 font-medium">ClawBot</span>
+                    {' '}发送{' '}
+                    <span className="text-slate-200 font-medium">「绑定老师」</span>
+                    ，即可绑定您的微信接收反馈通知
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {selfBindStatus === 'checking' && (
+                      <span className="flex-1 text-[11px] text-slate-400 animate-pulse">检查中…</span>
+                    )}
+                    {selfBindStatus === 'unbound' && (
+                      <span className="flex-1 text-[11px] text-amber-400">尚未绑定，请先发送「绑定老师」</span>
+                    )}
+                    {selfBindStatus === 'err' && (
+                      <span className="flex-1 text-[11px] text-red-400">查询失败，请确认 ClawBot 服务运行中</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCheckSelfStatus}
+                      disabled={selfBindStatus === 'checking'}
+                      className="ml-auto shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
+                    >
+                      {selfBindStatus === 'idle'
+                        ? '验证绑定状态'
+                        : selfBindStatus === 'bound'
+                        ? '检查状态'
+                        : '点击验证'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* ── weclaw 扫码绑定 ───────────────────────────────────────── */}
-              <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
-                      <QrCode size={11} className="text-[#07C160]" />
-                      微信扫码登录（weclaw 连接）
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      扫码后 weclaw 将连接到老师的微信，自动接收并转发消息
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCheckWeclawStatus}
-                    disabled={weclawStatus === 'checking' || weclawRestarting}
-                    className="shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
-                  >
-                    检查状态
-                  </button>
-                </div>
-
-                {/* Status badge */}
-                {weclawStatus !== 'idle' && (
-                  <p className={`text-[11px] font-medium ${
-                    weclawStatus === 'online_loggedin'  ? 'text-emerald-400' :
-                    weclawStatus === 'online_loggedout' ? 'text-amber-400' :
-                    weclawStatus === 'checking'         ? 'text-slate-400 animate-pulse' :
-                    weclawStatus === 'stopped'          ? 'text-slate-500' :
-                    'text-red-400'
-                  }`}>
-                    {weclawStatus === 'online_loggedin'  && `✅ 已连接${weclawNickname ? `：${weclawNickname}` : ''}`}
-                    {weclawStatus === 'online_loggedout' && '⚠️ 进程运行中，等待扫码登录…'}
-                    {weclawStatus === 'checking'         && '检测中…'}
-                    {weclawStatus === 'stopped'          && '⭕ weclaw 未运行'}
-                    {weclawStatus === 'err'              && '❌ 检测失败，请确认 weclaw-agent 服务正常'}
-                  </p>
-                )}
-
-                {/* QR code display */}
-                {weclawQr && (
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 flex flex-col items-center gap-2">
-                    {weclawQr.type === 'url' && (
-                      <>
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(weclawQr.data)}`}
-                          alt="微信登录二维码"
-                          className="w-44 h-44 rounded-lg"
-                        />
-                        <p className="text-[11px] text-slate-400 text-center">
-                          请用微信扫码，完成后自动检测连接状态
-                        </p>
-                      </>
-                    )}
-                    {weclawQr.type === 'image' && (
-                      <>
-                        <img
-                          src={weclawQr.data}
-                          alt="微信登录二维码"
-                          className="w-44 h-44 rounded-lg"
-                        />
-                        <p className="text-[11px] text-slate-400 text-center">
-                          请用微信扫码，完成后自动检测连接状态
-                        </p>
-                      </>
-                    )}
-                    {weclawQr.type === 'manual' && (
-                      <p className="text-[11px] text-amber-400 text-center leading-relaxed">
-                        {weclawQr.data}
-                      </p>
-                    )}
-                    {weclawStatus === 'online_loggedout' && (
-                      <p className="text-[11px] text-slate-500 animate-pulse">
-                        轮询检测登录状态中…
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Restart button */}
+              {/* ── Step 3: Parent contacts (collapsible) ──────────────── */}
+              <div>
                 <button
                   type="button"
-                  onClick={handleRestartWeclaw}
-                  disabled={weclawRestarting}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-md bg-[#07C160]/10 border border-[#07C160]/30 text-[#07C160] hover:bg-[#07C160]/20 transition-colors disabled:opacity-50 w-full justify-center"
+                  onClick={() => setParentPanelOpen(v => !v)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-slate-800/40 transition-colors text-left"
                 >
-                  {weclawRestarting
-                    ? <><RefreshCw size={11} className="animate-spin" /> 正在获取二维码…</>
-                    : <><QrCode size={11} /> 重新扫码登录</>}
+                  <StepBadge n="③" locked />
+                  <span className="text-xs font-medium text-slate-300">家长通知配置</span>
+                  <span className="text-[10px] text-slate-500 ml-0.5">（可选）</span>
+                  {contacts.length > 0 && (
+                    <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">
+                      {contacts.length}
+                    </span>
+                  )}
+                  {parentPanelOpen
+                    ? <ChevronDown size={12} className="ml-auto text-slate-500" />
+                    : <ChevronRight size={12} className="ml-auto text-slate-500" />}
                 </button>
 
-                {/* Optional API token input */}
-                <div className="flex items-center gap-1.5">
-                  <KeyRound size={10} className="text-slate-500 shrink-0" />
-                  <input
-                    type={showWeclawToken ? 'text' : 'password'}
-                    value={weclawToken}
-                    onChange={e => {
-                      setWeclawToken(e.target.value);
-                      localStorage.setItem('weclaw_control_token', e.target.value);
-                    }}
-                    placeholder="API Token（服务器设置了 WECLAW_API_TOKEN 时填写）"
-                    className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded px-2 py-1 text-[11px] text-slate-300 placeholder-slate-600 outline-none transition-colors font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowWeclawToken(v => !v)}
-                    className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors shrink-0 px-1"
-                  >
-                    {showWeclawToken ? '隐藏' : '显示'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Parent contacts */}
-              <div>
-                <div className="mb-2">
-                  <p className="text-xs text-slate-400 font-medium">家长联系人绑定</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    填入该学生在 ClawBot 微信通讯录中显示的<span className="text-slate-400 font-medium">备注名或昵称</span>（发送时将匹配此名称）
-                  </p>
-                </div>
-
-                {contacts.length === 0 && (
-                  <div className="rounded-lg px-3 py-2.5 bg-amber-950/30 border border-amber-800/30 mb-2">
-                    <p className="text-[11px] text-amber-400 font-medium">尚未添加任何家长联系人</p>
-                    <p className="text-[11px] text-amber-500/80 mt-0.5">
-                      添加绑定后，点击「同步微信」才能自动将反馈发送给对应家长。
+                {parentPanelOpen && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-slate-700/50">
+                    <p className="text-[11px] text-slate-500 pt-2">
+                      填入该学生在 ClawBot 微信通讯录中显示的
+                      <span className="text-slate-400 font-medium">备注名或昵称</span>
+                      （发送时将匹配此名称）
                     </p>
-                  </div>
-                )}
 
-                {contacts.length > 0 && (
-                  <div className="rounded-lg border border-slate-700 overflow-hidden mb-2">
-                    {/* Table header */}
-                    <div className="grid grid-cols-[1fr_1fr_56px] text-[10px] text-slate-500 bg-slate-800/80 px-3 py-1.5 border-b border-slate-700">
-                      <span>学生姓名</span>
-                      <span>家长微信备注名 / 昵称</span>
-                      <span />
-                    </div>
-                    {contacts.map((c, idx) => (
-                      <div
-                        key={c.studentName}
-                        className={`grid grid-cols-[1fr_1fr_56px] items-center px-3 py-1.5 text-xs ${
-                          idx < contacts.length - 1 ? 'border-b border-slate-700/60' : ''
-                        }`}
-                      >
-                        <span className="text-slate-300 truncate">{c.studentName}</span>
-                        {editingKey === c.studentName ? (
-                          <input
-                            autoFocus
-                            value={editWechat}
-                            onChange={e => setEditWechat(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') handleSaveEdit(c.studentName);
-                              if (e.key === 'Escape') setEditingKey(null);
-                            }}
-                            className="bg-slate-700 border border-slate-500 focus:border-emerald-500 rounded px-1.5 py-0.5 text-xs text-slate-100 outline-none mr-1"
-                          />
-                        ) : (
-                          <span className="text-slate-400 truncate">{c.wechatName}</span>
-                        )}
-                        <div className="flex items-center justify-end gap-1">
-                          {editingKey === c.studentName ? (
-                            <button
-                              type="button"
-                              onClick={() => handleSaveEdit(c.studentName)}
-                              className="p-1 text-emerald-400 hover:text-emerald-300 transition-colors"
-                              title="保存"
-                            >
-                              <Check size={12} />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEdit(c)}
-                              className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
-                              title="编辑"
-                            >
-                              <Pencil size={11} />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteContact(c.studentName)}
-                            className="p-1 text-slate-500 hover:text-red-400 transition-colors"
-                            title="删除"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
+                    {contacts.length === 0 && (
+                      <div className="rounded-lg px-3 py-2 bg-amber-950/20 border border-amber-800/20">
+                        <p className="text-[11px] text-amber-500 font-medium">尚未添加任何家长联系人</p>
+                        <p className="text-[11px] text-amber-600/80 mt-0.5">
+                          添加绑定后，点击「同步微信」才能自动将反馈发送给对应家长。
+                        </p>
                       </div>
-                    ))}
+                    )}
+
+                    {contacts.length > 0 && (
+                      <div className="rounded-lg border border-slate-700 overflow-hidden">
+                        <div className="grid grid-cols-[1fr_1fr_56px] text-[10px] text-slate-500 bg-slate-800/80 px-3 py-1.5 border-b border-slate-700">
+                          <span>学生姓名</span>
+                          <span>家长微信备注名 / 昵称</span>
+                          <span />
+                        </div>
+                        {contacts.map((c, idx) => (
+                          <div
+                            key={c.studentName}
+                            className={`grid grid-cols-[1fr_1fr_56px] items-center px-3 py-1.5 text-xs ${
+                              idx < contacts.length - 1 ? 'border-b border-slate-700/60' : ''
+                            }`}
+                          >
+                            <span className="text-slate-300 truncate">{c.studentName}</span>
+                            {editingKey === c.studentName ? (
+                              <input
+                                autoFocus
+                                value={editWechat}
+                                onChange={e => setEditWechat(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveEdit(c.studentName);
+                                  if (e.key === 'Escape') setEditingKey(null);
+                                }}
+                                className="bg-slate-700 border border-slate-500 focus:border-emerald-500 rounded px-1.5 py-0.5 text-xs text-slate-100 outline-none mr-1"
+                              />
+                            ) : (
+                              <span className="text-slate-400 truncate">{c.wechatName}</span>
+                            )}
+                            <div className="flex items-center justify-end gap-1">
+                              {editingKey === c.studentName ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEdit(c.studentName)}
+                                  className="p-1 text-emerald-400 hover:text-emerald-300 transition-colors"
+                                  title="保存"
+                                >
+                                  <Check size={12} />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEdit(c)}
+                                  className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                                  title="编辑"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteContact(c.studentName)}
+                                className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                                title="删除"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add new contact */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newStudent}
+                        onChange={e => setNewStudent(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
+                        placeholder="学生姓名（如：张三）"
+                        className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
+                      />
+                      <input
+                        type="text"
+                        value={newWechat}
+                        onChange={e => setNewWechat(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
+                        placeholder="微信备注名/昵称"
+                        className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddContact}
+                        disabled={!newStudent.trim() || !newWechat.trim()}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs rounded-lg transition-colors"
+                        title="新增联系人"
+                      >
+                        <Plus size={12} /> 新增
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                {/* Add new contact form */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newStudent}
-                    onChange={e => setNewStudent(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
-                    placeholder="学生姓名（如：张三）"
-                    className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
-                  />
-                  <input
-                    type="text"
-                    value={newWechat}
-                    onChange={e => setNewWechat(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
-                    placeholder="微信备注名/昵称（须与联系人一致）"
-                    className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddContact}
-                    disabled={!newStudent.trim() || !newWechat.trim()}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-xs rounded-lg transition-colors"
-                    title="新增联系人"
-                  >
-                    <Plus size={12} /> 新增
-                  </button>
-                </div>
               </div>
+
             </div>
           </div>
 
@@ -621,5 +623,34 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Helper: step number badge ─────────────────────────────────────────────────
+function StepBadge({
+  n,
+  done = false,
+  active = false,
+  locked = false,
+}: {
+  n: string;
+  done?: boolean;
+  active?: boolean;
+  locked?: boolean;
+}) {
+  const cls = done
+    ? 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/50'
+    : active
+    ? 'bg-amber-500/15 text-amber-400 ring-amber-500/40'
+    : locked
+    ? 'bg-slate-700 text-slate-500 ring-slate-600'
+    : 'bg-slate-700 text-slate-400 ring-slate-600';
+
+  return (
+    <span
+      className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ring-1 ${cls}`}
+    >
+      {n}
+    </span>
   );
 }
