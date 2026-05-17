@@ -12,7 +12,7 @@ import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
-import { formatParentMessage, getParentContact } from '../utils/wechat';
+import { formatParentMessage, getParentContact, notifyParent } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatKnowledgeReferencesBlock, getKnowledgeReferences } from '../knowledgebase/search';
 
@@ -430,15 +430,26 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     const userMessage: AiMessage = { role: 'user', content: userContent };
 
     try {
+      let fullFeedback = '';
       await streamAI(
         [userMessage],
         settings,
         ctrl.signal,
-        chunk => setByTask(s => {
-          const prev = s[taskId] ?? EMPTY_SESSION;
-          return { ...s, [taskId]: { ...prev, feedback: prev.feedback + chunk } };
-        }),
+        chunk => {
+          fullFeedback += chunk;
+          setByTask(s => {
+            const prev = s[taskId] ?? EMPTY_SESSION;
+            return { ...s, [taskId]: { ...prev, feedback: prev.feedback + chunk } };
+          });
+        },
       );
+      // AI 反馈生成完成后自动通知家长（fire-and-forget，未绑定联系人时静默跳过）
+      if (fullFeedback) {
+        const taskNames = getStudentNames(selectedTask);
+        for (const name of taskNames) {
+          notifyParent(name, `「${name}」的课堂反馈已生成：\n\n${fullFeedback}`);
+        }
+      }
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;
       patchSession(taskId, { error: e instanceof Error ? e.message : '生成失败' });
@@ -910,7 +921,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                     disabled={wechatSyncing}
                     title={
                       hasAllContacts
-                        ? '通过 wechat-agent 机器人同步已保存反馈到微信'
+                        ? '手动重新发送已保存反馈到微信'
                         : '有学生未绑定家长微信，点击后将提示去设置页配置'
                     }
                     style={{
@@ -934,7 +945,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                         : hasAllContacts
                           ? <Send size={10} />
                           : <AlertCircle size={10} />}
-                    {wechatSyncMsg?.type === 'ok' ? '已发送' : '同步微信'}
+                    {wechatSyncMsg?.type === 'ok' ? '已发送' : '重新发送'}
                   </button>
                 )}
               </div>

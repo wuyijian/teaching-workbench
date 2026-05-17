@@ -118,6 +118,7 @@ try {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
   INITIAL_DATA = { tasks: [], mergedArchived: {} };
 }
+import { notifyParent } from '../utils/wechat';
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
 import {
   buildVolcanoHeaders, buildVolcanoBody, fileToBase64,
@@ -128,6 +129,14 @@ import { xfyunProxyBase, volcanoProxyBase } from '../config/urls';
 import { getPlatformVolcanoCredentials, getPlatformLlmApiKey, getPlatformLlmBaseUrl } from '../config/platformApi';
 import { withRetry, isTransient } from '../utils/retry';
 import { uploadFileToKimi, deleteKimiFile } from '../utils/kimiFile';
+import { useAuth } from '../context/AuthContext';
+import {
+  upsertTask,
+  syncLocalTasksToCloud,
+  fetchUserTasks,
+  deleteTaskFromCloud,
+  updateTaskSummary,
+} from '../lib/taskStorage';
 
 function uid() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -387,6 +396,7 @@ const MAX_CONCURRENT = 5;
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useTaskManager(settings: Settings, language: string, quotaApi?: QuotaApi) {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(() => INITIAL_DATA.tasks);
   const [archivedStudents, setArchivedStudents] = useState<ArchivedStudentsState>(() => INITIAL_DATA.mergedArchived);
 
@@ -404,19 +414,77 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       .map(t => [t.id, t.examKimiFileId!]),
   ));
 
-  // 让 drain 始终拿到最新 settings / language / quotaApi，避免闭包旧值
+  // 让 drain 始终拿到最新 settings / language / quotaApi / user，避免闭包旧值
   const settingsRef = useRef(settings);
   const languageRef = useRef(language);
   const quotaApiRef = useRef(quotaApi);
+  const userRef = useRef(user);
+  // tasksRef 与 tasks state 保持同步，供云端同步函数安全读取最新任务列表
+  const tasksRef = useRef<Task[]>(INITIAL_DATA.tasks);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { languageRef.current = language; }, [language]);
   useEffect(() => { quotaApiRef.current = quotaApi; }, [quotaApi]);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => { saveTasks(tasks); }, [tasks]);
   useEffect(() => { saveArchivedStudents(archivedStudents); }, [archivedStudents]);
 
-  const patch = useCallback((id: string, changes: Partial<Task>) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t));
+  // ── 云端初始化：user 变化（登录/登出）时触发 ──────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+
+    const init = async () => {
+      // 首次登录：将本地已有任务批量上传到云端（仅执行一次，用 key 标记）
+      const syncKey = `tw-cloud-synced-${userId}`;
+      if (!localStorage.getItem(syncKey)) {
+        const localTasks = tasksRef.current;
+        try {
+          if (localTasks.length > 0) await syncLocalTasksToCloud(localTasks, userId);
+          localStorage.setItem(syncKey, '1');
+        } catch (e) {
+          console.warn('[cloud] initial sync error:', (e as Error).message);
+        }
+      }
+
+      // 从云端拉取并合并（云端为准，补充本地缺失；同 id 以云端覆盖本地）
+      try {
+        const cloudTasks = await fetchUserTasks(userId);
+        if (cloudTasks.length > 0) {
+          setTasks(prev => {
+            const merged = new Map(prev.map(t => [t.id, t]));
+            for (const t of cloudTasks) merged.set(t.id, t);
+            const next = Array.from(merged.values()).sort((a, b) => b.createdAt - a.createdAt);
+            tasksRef.current = next;
+            return next;
+          });
+        }
+      } catch (e) {
+        console.warn('[cloud] fetchUserTasks error:', (e as Error).message);
+      }
+    };
+
+    init();
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const patch = useCallback((
+    id: string,
+    changes: Partial<Task>,
+    { cloudSync = false }: { cloudSync?: boolean } = {},
+  ) => {
+    setTasks(prev => {
+      const next = prev.map(t => t.id === id ? { ...t, ...changes } : t);
+      tasksRef.current = next;
+      return next;
+    });
+    if (cloudSync && userRef.current) {
+      const updated = tasksRef.current.find(t => t.id === id);
+      if (updated) {
+        upsertTask(updated, userRef.current.id).catch(
+          e => console.warn('[cloud] patch sync:', (e as Error).message),
+        );
+      }
+    }
   }, []);
 
   /** 循环启动队列任务，直到并发槽占满（MAX_CONCURRENT）或队列为空 */
@@ -442,6 +510,12 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
 
       // 以 void 启动，不阻塞循环，让 while 继续填满并发槽
       void (async () => {
+        // 提前捕获学生姓名列表，供转写完成后通知用
+        const taskRef = tasksRef.current.find(t => t.id === id);
+        const taskStudentNames = taskRef?.studentNames?.length
+          ? taskRef.studentNames
+          : taskRef?.studentName ? [taskRef.studentName] : [];
+
         // ── 配额守门：估算时长，未登录 / 额度不足直接终止 ──────────────────
         const qApi = quotaApiRef.current;
         const estSec = await estimateDurationSec(file);
@@ -464,13 +538,18 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
             ? await transcribeVolcano(file, l, onProgress, shouldStop)
             : await transcribeXfyun(file, s, l, onProgress, shouldStop);
           if (!stopFlags.current.get(id)) {
-            patch(id, { status: 'done', progress: 100, segments, audioFile: undefined });
+            patch(id, { status: 'done', progress: 100, segments, audioFile: undefined }, { cloudSync: true });
             // 扣量：使用估算时长（来自音频元数据，已是真实总长）
             if (qApi) await qApi.recordUsage(estMin);
+            // 转写完成自动通知家长（fire-and-forget，未绑定联系人时静默跳过）
+            const durationLabel = estMin > 0 ? `共 ${estMin} 分钟，` : '';
+            for (const name of taskStudentNames) {
+              notifyParent(name, `「${name}」的课堂录音已转写完成，${durationLabel}可以查看转写内容了。`);
+            }
           }
         } catch (err: unknown) {
           if (!stopFlags.current.get(id)) {
-            patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' });
+            patch(id, { status: 'error', error: err instanceof Error ? err.message : '转写失败' }, { cloudSync: true });
           }
         } finally {
           pendingRef.current.delete(id);
@@ -523,7 +602,17 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
       // 有文件时立即标记 uploading，等上传完毕再更新
       examKimiUploadStatus: hasExamFile ? 'uploading' : undefined,
     };
-    setTasks(prev => [newTask, ...prev]);
+    setTasks(prev => {
+      const next = [newTask, ...prev];
+      tasksRef.current = next;
+      return next;
+    });
+    // 云端同步（fire-and-forget）
+    if (userRef.current) {
+      upsertTask(newTask, userRef.current.id).catch(
+        e => console.warn('[cloud] createTask:', (e as Error).message),
+      );
+    }
     if (file) {
       stopFlags.current.set(id, false);
       pendingRef.current.set(id, file);
@@ -564,6 +653,13 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
     queueRef.current = queueRef.current.filter(qid => qid !== id);
     pendingRef.current.delete(id);
     engineRef.current.delete(id);
+
+    // 云端删除（fire-and-forget）
+    if (userRef.current) {
+      deleteTaskFromCloud(id).catch(
+        e => console.warn('[cloud] deleteTask:', (e as Error).message),
+      );
+    }
 
     // Fire-and-forget：清理 Kimi 上的试卷文件（失败不报错）
     const kimiFileId = kimiFileIdsRef.current.get(id);
@@ -637,10 +733,15 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
 
   const saveAISummary = useCallback((id: string, summary: string) => {
     patch(id, { aiSummary: summary, aiSavedAt: Date.now() });
+    if (userRef.current) {
+      updateTaskSummary(id, summary).catch(
+        e => console.warn('[cloud] saveAISummary:', (e as Error).message),
+      );
+    }
   }, [patch]);
 
   const saveNotes = useCallback((id: string, notes: string) => {
-    patch(id, { notes });
+    patch(id, { notes }, { cloudSync: true });
   }, [patch]);
 
   const isStudentArchived = useCallback((studentName: string) => {

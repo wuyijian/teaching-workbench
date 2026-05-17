@@ -114,3 +114,36 @@ export async function sendFeedbackToParent(
   if (isElectron) return electronSendViaWechat(contactName, message);
   return webSendViaClipboard(message);
 }
+
+// ─── 自动通知（fire-and-forget） ──────────────────────────────────────────────
+
+const MAX_AUTO_MSG_LENGTH = 500;
+
+/**
+ * 向指定学生的家长发送微信通知（fire-and-forget）。
+ * - 若未绑定家长联系人，静默跳过。
+ * - 失败时仅 console.warn，不抛异常，不阻塞主流程。
+ */
+export function notifyParent(studentName: string, message: string): void {
+  const contact = getParentContact(studentName);
+  if (!contact?.wechatName) return;
+
+  const truncated = message.length > MAX_AUTO_MSG_LENGTH
+    ? message.slice(0, MAX_AUTO_MSG_LENGTH) + '…'
+    : message;
+
+  fetch('/wechat-agent/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to: contact.wechatName, message: truncated }),
+  })
+    .then(async resp => {
+      if (!resp.ok) {
+        console.warn(`[notifyParent] ${studentName}: HTTP ${resp.status}`);
+        return;
+      }
+      const json = await resp.json() as { ok: boolean; error?: string };
+      if (!json.ok) console.warn(`[notifyParent] ${studentName}: ${json.error ?? '发送失败'}`);
+    })
+    .catch(err => console.warn(`[notifyParent] ${studentName}:`, err));
+}
