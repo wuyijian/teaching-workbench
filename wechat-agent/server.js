@@ -41,41 +41,73 @@ app.get('/health', (_req, res) => res.json({ ok: true, service: 'wechat-agent' }
 // POST /send  { to: "家长微信备注名", message: "消息正文" }
 // 需要环境变量 WECLAW_SEND_URL（ClawBot 主动推送地址）；
 // 可选 WECLAW_API_TOKEN（Bearer 鉴权）。
+
+/** 复用 /send 逻辑向指定备注名发送消息 */
+async function sendToContact(to, message) {
+  const sendUrl = process.env.WECLAW_SEND_URL;
+  if (!sendUrl) {
+    throw Object.assign(new Error('未配置主动推送服务（WECLAW_SEND_URL）'), { status: 503 });
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.WECLAW_API_TOKEN) {
+    headers['Authorization'] = `Bearer ${process.env.WECLAW_API_TOKEN}`;
+  }
+  const resp = await fetch(sendUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ to, msg_type: 'text', content: message }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw Object.assign(new Error(`发送服务返回错误 ${resp.status}`), { status: 502, detail: errText.slice(0, 200) });
+  }
+  const data = await resp.json().catch(() => ({}));
+  return data.ok !== false;
+}
+
 app.post('/send', async (req, res) => {
   const { to, message } = req.body || {};
   if (!to || !message) {
     return res.status(400).json({ ok: false, error: '参数缺失：需要 to（微信备注名）和 message（消息内容）' });
   }
-
-  const sendUrl = process.env.WECLAW_SEND_URL;
-  if (!sendUrl) {
+  if (!process.env.WECLAW_SEND_URL) {
     console.warn('[wechat-agent/send] WECLAW_SEND_URL 未配置，无法主动推送');
     return res.status(503).json({ ok: false, error: '未配置主动推送服务（WECLAW_SEND_URL），请在服务器 .env 中添加此变量' });
   }
-
   try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (process.env.WECLAW_API_TOKEN) {
-      headers['Authorization'] = `Bearer ${process.env.WECLAW_API_TOKEN}`;
-    }
-    const resp = await fetch(sendUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ to, msg_type: 'text', content: message }),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      console.error(`[wechat-agent/send] ClawBot API 返回 ${resp.status}:`, errText.slice(0, 200));
-      return res.status(502).json({ ok: false, error: `发送服务返回错误 ${resp.status}` });
-    }
-
-    const data = await resp.json().catch(() => ({}));
+    const ok = await sendToContact(to, message);
     console.log(`[wechat-agent/send] ✅ 已发送 → ${to}（${message.length} 字）`);
-    return res.json({ ok: data.ok !== false });
+    return res.json({ ok });
   } catch (err) {
     console.error('[wechat-agent/send] 发送失败:', err.message);
-    return res.status(502).json({ ok: false, error: `网络请求失败：${err.message}` });
+    return res.status(err.status ?? 502).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /send-self  { message: "消息正文" }
+// 将消息发给老师自己绑定的微信账号（由 WECLAW_SELF_NICKNAME 环境变量指定备注名）。
+// 若 WECLAW_SELF_NICKNAME 未配置，则静默跳过（返回 200 ok:false）。
+app.post('/send-self', async (req, res) => {
+  const { message } = req.body || {};
+  if (!message) {
+    return res.status(400).json({ ok: false, error: '参数缺失：需要 message（消息内容）' });
+  }
+  const selfNickname = process.env.WECLAW_SELF_NICKNAME;
+  if (!selfNickname) {
+    console.warn('[wechat-agent/send-self] WECLAW_SELF_NICKNAME 未配置，跳过自我通知');
+    return res.json({ ok: false, error: '未配置 WECLAW_SELF_NICKNAME，请在服务器 .env 中添加此变量' });
+  }
+  if (!process.env.WECLAW_SEND_URL) {
+    console.warn('[wechat-agent/send-self] WECLAW_SEND_URL 未配置，无法推送');
+    return res.status(503).json({ ok: false, error: '未配置主动推送服务（WECLAW_SEND_URL）' });
+  }
+  try {
+    const ok = await sendToContact(selfNickname, message);
+    console.log(`[wechat-agent/send-self] ✅ 已发给自己（${selfNickname}），${message.length} 字`);
+    return res.json({ ok });
+  } catch (err) {
+    console.error('[wechat-agent/send-self] 发送失败:', err.message);
+    return res.status(err.status ?? 502).json({ ok: false, error: err.message });
   }
 });
 

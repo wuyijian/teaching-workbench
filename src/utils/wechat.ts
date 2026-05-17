@@ -120,6 +120,32 @@ export async function sendFeedbackToParent(
 const MAX_AUTO_MSG_LENGTH = 500;
 
 /**
+ * 向老师自己的微信发送通知（fire-and-forget）。
+ * - 调用 /wechat-agent/send-self；若服务端未配置 WECLAW_SELF_NICKNAME，静默跳过。
+ * - 失败时仅 console.warn，不抛异常，不阻塞主流程。
+ */
+export function notifySelf(message: string): void {
+  const truncated = message.length > MAX_AUTO_MSG_LENGTH
+    ? message.slice(0, MAX_AUTO_MSG_LENGTH) + '…'
+    : message;
+
+  fetch('/wechat-agent/send-self', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: truncated }),
+  })
+    .then(async resp => {
+      if (!resp.ok) {
+        console.warn(`[notifySelf] HTTP ${resp.status}`);
+        return;
+      }
+      const json = await resp.json() as { ok: boolean; error?: string };
+      if (!json.ok) console.warn(`[notifySelf] ${json.error ?? '发送失败'}`);
+    })
+    .catch(err => console.warn('[notifySelf]', err));
+}
+
+/**
  * 向指定学生的家长发送微信通知（fire-and-forget）。
  * - 若未绑定家长联系人，静默跳过。
  * - 失败时仅 console.warn，不抛异常，不阻塞主流程。

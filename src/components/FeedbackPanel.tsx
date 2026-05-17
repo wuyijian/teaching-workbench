@@ -12,7 +12,7 @@ import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
-import { formatParentMessage, getParentContact, notifyParent } from '../utils/wechat';
+import { formatParentMessage, getParentContact, notifySelf } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatKnowledgeReferencesBlock, getKnowledgeReferences } from '../knowledgebase/search';
 
@@ -443,12 +443,11 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           });
         },
       );
-      // AI 反馈生成完成后自动通知家长（fire-and-forget，未绑定联系人时静默跳过）
+      // AI 反馈生成完成后通知老师自己（fire-and-forget，未配置 WECLAW_SELF_NICKNAME 时静默跳过）
       if (fullFeedback) {
         const taskNames = getStudentNames(selectedTask);
-        for (const name of taskNames) {
-          notifyParent(name, `「${name}」的课堂反馈已生成：\n\n${fullFeedback}`);
-        }
+        const namesLabel = taskNames.join('、');
+        notifySelf(`「${namesLabel}」的课堂反馈已生成：\n\n${fullFeedback}`);
       }
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;
