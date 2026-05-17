@@ -5,7 +5,6 @@ import {
   AlertCircle, Loader2, ClipboardList, ChevronUp, MessageCircle, Wand2,
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
-import { MarkdownRenderer } from './MarkdownRenderer';
 import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
@@ -215,7 +214,9 @@ function FollowUpBubble({ msg }: { msg: FeedbackMessage }) {
         isUser ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-[#1e2433] text-slate-300 border border-slate-700/50 rounded-tl-sm'
       }`}>
         {msg.content
-          ? isUser ? msg.content : <MarkdownRenderer content={msg.content} />
+          ? isUser
+            ? msg.content
+            : <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</span>
           : <span className="opacity-40 animate-pulse">▋</span>
         }
       </div>
@@ -828,9 +829,11 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               </div>
             </div>
 
-            {/* Feedback markdown */}
+            {/* Feedback plain text */}
             <div className="rounded-xl" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', padding: '16px 18px' }}>
-              <MarkdownRenderer content={feedback} />
+              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.7, color: 'var(--text-2)', margin: 0, wordBreak: 'break-word' }}>
+                {feedback}
+              </div>
             </div>
 
             {/* Follow-ups */}
