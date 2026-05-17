@@ -62,7 +62,7 @@ block = '''    # ── 火山引擎豆包大模型录音转写反代 ──
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;
-        client_max_body_size    100M;
+        client_max_body_size    500M;
         proxy_request_buffering off;
         client_body_timeout     600s;
         send_timeout            600s;
