@@ -550,6 +550,17 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ to: contact.wechatName, message }),
         });
+        if (!resp.ok) {
+          // 非 2xx —— 通常是 nginx 没有 /wechat-agent/ location（返回 404 HTML）
+          // 或 wechat-agent 服务未启动（502）
+          const hint = resp.status === 404
+            ? '路由不存在（nginx 可能尚未注入 /wechat-agent/ 配置，请在服务器上执行 bash /tmp/patch-wechat-agent-nginx.sh）'
+            : resp.status === 502 || resp.status === 503
+              ? 'wechat-agent 服务未运行（请在服务器上执行 pm2 start wechat-agent）'
+              : `HTTP ${resp.status}`;
+          errors.push(`${studentName}：${hint}`);
+          continue;
+        }
         const json = await resp.json() as { ok: boolean; error?: string };
         if (!json.ok) {
           errors.push(`${studentName}：${json.error ?? '发送失败'}`);

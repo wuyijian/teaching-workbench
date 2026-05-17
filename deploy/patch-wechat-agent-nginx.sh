@@ -67,13 +67,30 @@ block = '''    # ── wechat-agent 主动推送反代（Express 监听 127.0.0
 
 '''
 
-# 锚点：在 /xfyun-api/ location 前面插入（保证落在 HTTPS server 块内）
-anchor = '    location /xfyun-api/'
-if anchor not in src:
-    print('未找到锚点 /xfyun-api/，可能配置已变更', file=sys.stderr)
-    sys.exit(1)
+# 锚点 1：在 /xfyun-api/ location 前面插入（保证落在 HTTPS server 块内）
+anchor1 = '    location /xfyun-api/'
+# 锚点 2（兜底）：在 /volcano-api/ 前面插入
+anchor2 = '    location /volcano-api/'
+# 锚点 3（最终兜底）：在最后一个 server 块的末尾 } 前插入
+#   取最后一个 "}" 之前的位置，适合大多数 nginx 单 server 块配置
 
-new_src = src.replace(anchor, block + anchor, 1)
+if anchor1 in src:
+    anchor = anchor1
+elif anchor2 in src:
+    anchor = anchor2
+else:
+    anchor = None
+
+if anchor:
+    new_src = src.replace(anchor, block + anchor, 1)
+else:
+    # 在文件末尾最后一个 "}" 前插入（假设整个文件就是一个 server 块）
+    last_brace = src.rfind('\n}')
+    if last_brace == -1:
+        print('未找到任何已知锚点且文件结构异常，无法自动注入', file=sys.stderr)
+        sys.exit(1)
+    new_src = src[:last_brace] + '\n' + block.rstrip() + '\n' + src[last_brace:]
+
 if new_src == src:
     print('替换未生效', file=sys.stderr)
     sys.exit(1)
