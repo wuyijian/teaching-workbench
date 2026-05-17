@@ -35,6 +35,7 @@ on:
       - 'tsconfig*.json'
       - 'deploy/**'
       - 'scripts/**'
+      - 'wechat-agent/**'
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
     inputs:
@@ -216,7 +217,28 @@ jobs:
             nginx -t && systemctl reload nginx
           "
 
-      # 12. 浅探活：抓首页 200，body 含 <div id="root"> 就算稳
+      # 12. 同步 wechat-agent 代码并重启 pm2 进程
+      #     排除 node_modules（服务器上 npm install）和 config.json（含绑定数据，不可覆盖）
+      - name: Deploy wechat-agent
+        run: |
+          AGENT_PATH=/root/wechat-agent
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${AGENT_PATH}'"
+          rsync -avz \
+            --exclude='node_modules' \
+            --exclude='config.json' \
+            --exclude='.DS_Store' \
+            -e "ssh -o StrictHostKeyChecking=yes" \
+            ./wechat-agent/ "${DEPLOY_USER}@${DEPLOY_HOST}:${AGENT_PATH}/"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -e
+            cd '${AGENT_PATH}'
+            npm install --production --silent
+            pm2 restart wechat-agent || pm2 start server.js --name wechat-agent
+            pm2 save
+            echo '✓ wechat-agent 重启成功'
+          "
+
+      # 13. 浅探活：抓首页 200，body 含 <div id="root"> 就算稳
       - name: Health check
         run: |
           set -e
