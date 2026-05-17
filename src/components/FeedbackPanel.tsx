@@ -268,7 +268,12 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [customPrompt, setCustomPrompt] = useState('');
   const [wechatOpen, setWechatOpen] = useState(false);
   const [wechatSyncing, setWechatSyncing] = useState(false);
-  const [wechatSyncMsg, setWechatSyncMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [wechatSyncMsg, setWechatSyncMsg] = useState<{
+    type: 'ok' | 'err';
+    text: string;
+    /** When true, renders a "去配置 →" action inside the banner */
+    showSettings?: boolean;
+  } | null>(null);
 
   const isCustomPrompt = promptPresetIdx === PROMPT_PRESETS.length - 1;
   const activePrompt = isCustomPrompt
@@ -529,8 +534,13 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     // Check every student has a contact configured
     const missing = names.filter(n => !getParentContact(n)?.wechatName);
     if (missing.length > 0) {
-      setWechatSyncMsg({ type: 'err', text: `请先在设置中配置家长微信联系人：${missing.join('、')}` });
-      setTimeout(() => setWechatSyncMsg(null), 4000);
+      setWechatSyncMsg({
+        type: 'err',
+        text: `以下学生尚未绑定家长微信联系人：${missing.join('、')}`,
+        showSettings: true,
+      });
+      // Keep this banner visible longer so the user can click "去配置"
+      setTimeout(() => setWechatSyncMsg(null), 10_000);
       return;
     }
 
@@ -898,8 +908,22 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   <button
                     onClick={handleWechatSync}
                     disabled={wechatSyncing}
-                    title="通过 wechat-agent 机器人同步已保存反馈到微信"
-                    style={{ ...btnStyle(false), color: wechatSyncMsg?.type === 'ok' ? 'var(--green)' : '#07C160' }}
+                    title={
+                      hasAllContacts
+                        ? '通过 wechat-agent 机器人同步已保存反馈到微信'
+                        : '有学生未绑定家长微信，点击后将提示去设置页配置'
+                    }
+                    style={{
+                      ...btnStyle(false),
+                      color: wechatSyncMsg?.type === 'ok'
+                        ? 'var(--green)'
+                        : hasAllContacts
+                          ? '#07C160'
+                          : '#f59e0b',
+                      borderColor: !hasAllContacts && wechatSyncMsg?.type !== 'ok'
+                        ? '#92400e'
+                        : undefined,
+                    }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
                   >
@@ -907,25 +931,10 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                       ? <Loader2 size={10} className="animate-spin" />
                       : wechatSyncMsg?.type === 'ok'
                         ? <Check size={10} />
-                        : <Send size={10} />}
+                        : hasAllContacts
+                          ? <Send size={10} />
+                          : <AlertCircle size={10} />}
                     {wechatSyncMsg?.type === 'ok' ? '已发送' : '同步微信'}
-                  </button>
-                )}
-                {selectedTask?.aiSummary && !hasAllContacts && onOpenSettings && (
-                  <button
-                    onClick={onOpenSettings}
-                    title="前往设置配置家长微信联系人"
-                    style={{
-                      ...btnStyle(false),
-                      color: 'var(--text-3)',
-                      fontSize: isMobile ? 11 : 10,
-                      padding: isMobile ? '8px 10px' : '5px 8px',
-                      borderStyle: 'dashed',
-                    }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#07C160'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
-                  >
-                    配置微信 →
                   </button>
                 )}
               </div>
@@ -933,14 +942,36 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
             {/* WeChat sync status */}
             {wechatSyncMsg && (
-              <div className="mb-3 flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg"
+              <div className="mb-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
                 style={{
-                  background: wechatSyncMsg.type === 'ok' ? 'rgba(7,193,96,0.1)' : 'var(--red-dim)',
-                  border: `1px solid ${wechatSyncMsg.type === 'ok' ? 'rgba(7,193,96,0.3)' : '#5a1e1e'}`,
-                  color: wechatSyncMsg.type === 'ok' ? '#07C160' : 'var(--red)',
+                  background: wechatSyncMsg.type === 'ok'
+                    ? 'rgba(7,193,96,0.1)'
+                    : wechatSyncMsg.showSettings
+                      ? 'rgba(245,158,11,0.08)'
+                      : 'var(--red-dim)',
+                  border: `1px solid ${
+                    wechatSyncMsg.type === 'ok'
+                      ? 'rgba(7,193,96,0.3)'
+                      : wechatSyncMsg.showSettings
+                        ? 'rgba(245,158,11,0.35)'
+                        : '#5a1e1e'
+                  }`,
+                  color: wechatSyncMsg.type === 'ok'
+                    ? '#07C160'
+                    : wechatSyncMsg.showSettings
+                      ? '#f59e0b'
+                      : 'var(--red)',
                 }}>
                 <AlertCircle size={11} style={{ flexShrink: 0 }} />
-                {wechatSyncMsg.text}
+                <span className="flex-1">{wechatSyncMsg.text}</span>
+                {wechatSyncMsg.showSettings && onOpenSettings && (
+                  <button
+                    onClick={() => { setWechatSyncMsg(null); onOpenSettings(); }}
+                    className="shrink-0 font-medium underline underline-offset-2 hover:opacity-70 transition-opacity"
+                  >
+                    去配置 →
+                  </button>
+                )}
               </div>
             )}
 

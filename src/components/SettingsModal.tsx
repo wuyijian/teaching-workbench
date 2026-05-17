@@ -225,12 +225,20 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
 
               {/* Parent contacts */}
               <div>
-                <p className="text-xs text-slate-400 font-medium mb-2">家长联系人</p>
+                <div className="mb-2">
+                  <p className="text-xs text-slate-400 font-medium">家长联系人绑定</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    填入该学生在 ClawBot 微信通讯录中显示的<span className="text-slate-400 font-medium">备注名或昵称</span>（发送时将匹配此名称）
+                  </p>
+                </div>
 
                 {contacts.length === 0 && (
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    暂无联系人，请在下方新增
-                  </p>
+                  <div className="rounded-lg px-3 py-2.5 bg-amber-950/30 border border-amber-800/30 mb-2">
+                    <p className="text-[11px] text-amber-400 font-medium">尚未添加任何家长联系人</p>
+                    <p className="text-[11px] text-amber-500/80 mt-0.5">
+                      添加绑定后，点击「同步微信」才能自动将反馈发送给对应家长。
+                    </p>
+                  </div>
                 )}
 
                 {contacts.length > 0 && (
@@ -238,7 +246,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     {/* Table header */}
                     <div className="grid grid-cols-[1fr_1fr_56px] text-[10px] text-slate-500 bg-slate-800/80 px-3 py-1.5 border-b border-slate-700">
                       <span>学生姓名</span>
-                      <span>家长微信昵称</span>
+                      <span>家长微信备注名 / 昵称</span>
                       <span />
                     </div>
                     {contacts.map((c, idx) => (
@@ -304,7 +312,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     value={newStudent}
                     onChange={e => setNewStudent(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
-                    placeholder="学生姓名"
+                    placeholder="学生姓名（如：张三）"
                     className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
                   />
                   <input
@@ -312,7 +320,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     value={newWechat}
                     onChange={e => setNewWechat(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddContact(); }}
-                    placeholder="家长微信昵称"
+                    placeholder="微信备注名/昵称（须与联系人一致）"
                     className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors"
                   />
                   <button
