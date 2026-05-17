@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, FileText, RotateCcw, Bot, Wifi, WifiOff, Plus, Trash2, Pencil, Check } from 'lucide-react';
+import { X, FileText, RotateCcw, Bot, Wifi, WifiOff, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound } from 'lucide-react';
 import { FEEDBACK_PROMPT } from './TaskPanel';
 import type { Settings } from '../types';
 import { getAllParentContacts, setParentContact, deleteParentContact } from '../utils/wechat';
@@ -15,6 +15,12 @@ interface Props {
 
 type BotStatus = 'idle' | 'checking' | 'ok' | 'err';
 type SelfBindStatus = 'idle' | 'checking' | 'bound' | 'unbound' | 'err';
+type WeclawStatus = 'idle' | 'checking' | 'online_loggedin' | 'online_loggedout' | 'stopped' | 'err';
+
+type WeclawQr =
+  | { type: 'url'; data: string }
+  | { type: 'image'; data: string }
+  | { type: 'manual'; data: string };
 
 export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props) {
   const [feedbackPrompt, setFeedbackPrompt] = useState(
@@ -34,6 +40,17 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   const [newWechat, setNewWechat] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editWechat, setEditWechat] = useState('');
+
+  // ── weclaw login state ────────────────────────────────────────────────────
+  const [weclawStatus, setWeclawStatus] = useState<WeclawStatus>('idle');
+  const [weclawNickname, setWeclawNickname] = useState<string | null>(null);
+  const [weclawQr, setWeclawQr] = useState<WeclawQr | null>(null);
+  const [weclawRestarting, setWeclawRestarting] = useState(false);
+  const [weclawToken, setWeclawToken] = useState(
+    () => localStorage.getItem('weclaw_control_token') ?? '',
+  );
+  const [showWeclawToken, setShowWeclawToken] = useState(false);
+  const weclawPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const wechatRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -91,6 +108,82 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
       setSelfBindStatus('err');
     }
   }, []);
+
+  // ── weclaw polling helpers ────────────────────────────────────────────────
+  const stopWeclawPoll = useCallback(() => {
+    if (weclawPollRef.current !== null) {
+      clearInterval(weclawPollRef.current);
+      weclawPollRef.current = null;
+    }
+  }, []);
+
+  const fetchWeclawStatus = useCallback(async () => {
+    try {
+      const headers: Record<string, string> = {};
+      if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
+      const resp = await fetch('/wechat-agent/weclaw-status', {
+        headers,
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!resp.ok) { setWeclawStatus('err'); return; }
+      const data = await resp.json() as { running: boolean; loggedIn: boolean; nickname: string | null };
+      if (!data.running) {
+        setWeclawStatus('stopped');
+      } else if (data.loggedIn) {
+        setWeclawStatus('online_loggedin');
+        setWeclawNickname(data.nickname);
+        stopWeclawPoll();
+      } else {
+        setWeclawStatus('online_loggedout');
+      }
+    } catch {
+      setWeclawStatus('err');
+    }
+  }, [weclawToken, stopWeclawPoll]);
+
+  const handleCheckWeclawStatus = useCallback(async () => {
+    setWeclawStatus('checking');
+    await fetchWeclawStatus();
+  }, [fetchWeclawStatus]);
+
+  const handleRestartWeclaw = useCallback(async () => {
+    stopWeclawPoll();
+    setWeclawRestarting(true);
+    setWeclawQr(null);
+    setWeclawStatus('checking');
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
+      const resp = await fetch('/wechat-agent/weclaw-restart', {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await resp.json() as {
+        ok: boolean; type: string; qr?: string; message?: string;
+      };
+      if (data.ok && data.qr) {
+        setWeclawQr({ type: data.type as 'url' | 'image', data: data.qr });
+        setWeclawStatus('online_loggedout');
+      } else if (data.type === 'manual') {
+        setWeclawQr({ type: 'manual', data: data.message ?? '请在服务器上手动运行 weclaw login' });
+        setWeclawStatus('stopped');
+      }
+      // 轮询 /weclaw-status 直至检测到登录成功
+      weclawPollRef.current = setInterval(fetchWeclawStatus, 3000);
+    } catch (e) {
+      setWeclawQr({
+        type: 'manual',
+        data: e instanceof Error ? `操作失败：${e.message}` : '操作失败，请在服务器上手动运行 weclaw login',
+      });
+      setWeclawStatus('err');
+    } finally {
+      setWeclawRestarting(false);
+    }
+  }, [weclawToken, stopWeclawPoll, fetchWeclawStatus]);
+
+  // 清理轮询（组件卸载时）
+  useEffect(() => () => stopWeclawPoll(), [stopWeclawPoll]);
 
   // ── Contact CRUD ──────────────────────────────────────────────────────────
   const handleAddContact = () => {
@@ -273,6 +366,120 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     className="ml-auto shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
                   >
                     检查绑定状态
+                  </button>
+                </div>
+              </div>
+
+              {/* ── weclaw 扫码绑定 ───────────────────────────────────────── */}
+              <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
+                      <QrCode size={11} className="text-[#07C160]" />
+                      微信扫码登录（weclaw 连接）
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      扫码后 weclaw 将连接到老师的微信，自动接收并转发消息
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckWeclawStatus}
+                    disabled={weclawStatus === 'checking' || weclawRestarting}
+                    className="shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
+                  >
+                    检查状态
+                  </button>
+                </div>
+
+                {/* Status badge */}
+                {weclawStatus !== 'idle' && (
+                  <p className={`text-[11px] font-medium ${
+                    weclawStatus === 'online_loggedin'  ? 'text-emerald-400' :
+                    weclawStatus === 'online_loggedout' ? 'text-amber-400' :
+                    weclawStatus === 'checking'         ? 'text-slate-400 animate-pulse' :
+                    weclawStatus === 'stopped'          ? 'text-slate-500' :
+                    'text-red-400'
+                  }`}>
+                    {weclawStatus === 'online_loggedin'  && `✅ 已连接${weclawNickname ? `：${weclawNickname}` : ''}`}
+                    {weclawStatus === 'online_loggedout' && '⚠️ 进程运行中，等待扫码登录…'}
+                    {weclawStatus === 'checking'         && '检测中…'}
+                    {weclawStatus === 'stopped'          && '⭕ weclaw 未运行'}
+                    {weclawStatus === 'err'              && '❌ 检测失败，请确认 weclaw-agent 服务正常'}
+                  </p>
+                )}
+
+                {/* QR code display */}
+                {weclawQr && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 flex flex-col items-center gap-2">
+                    {weclawQr.type === 'url' && (
+                      <>
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(weclawQr.data)}`}
+                          alt="微信登录二维码"
+                          className="w-44 h-44 rounded-lg"
+                        />
+                        <p className="text-[11px] text-slate-400 text-center">
+                          请用微信扫码，完成后自动检测连接状态
+                        </p>
+                      </>
+                    )}
+                    {weclawQr.type === 'image' && (
+                      <>
+                        <img
+                          src={weclawQr.data}
+                          alt="微信登录二维码"
+                          className="w-44 h-44 rounded-lg"
+                        />
+                        <p className="text-[11px] text-slate-400 text-center">
+                          请用微信扫码，完成后自动检测连接状态
+                        </p>
+                      </>
+                    )}
+                    {weclawQr.type === 'manual' && (
+                      <p className="text-[11px] text-amber-400 text-center leading-relaxed">
+                        {weclawQr.data}
+                      </p>
+                    )}
+                    {weclawStatus === 'online_loggedout' && (
+                      <p className="text-[11px] text-slate-500 animate-pulse">
+                        轮询检测登录状态中…
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Restart button */}
+                <button
+                  type="button"
+                  onClick={handleRestartWeclaw}
+                  disabled={weclawRestarting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-md bg-[#07C160]/10 border border-[#07C160]/30 text-[#07C160] hover:bg-[#07C160]/20 transition-colors disabled:opacity-50 w-full justify-center"
+                >
+                  {weclawRestarting
+                    ? <><RefreshCw size={11} className="animate-spin" /> 正在获取二维码…</>
+                    : <><QrCode size={11} /> 重新扫码登录</>}
+                </button>
+
+                {/* Optional API token input */}
+                <div className="flex items-center gap-1.5">
+                  <KeyRound size={10} className="text-slate-500 shrink-0" />
+                  <input
+                    type={showWeclawToken ? 'text' : 'password'}
+                    value={weclawToken}
+                    onChange={e => {
+                      setWeclawToken(e.target.value);
+                      localStorage.setItem('weclaw_control_token', e.target.value);
+                    }}
+                    placeholder="API Token（服务器设置了 WECLAW_API_TOKEN 时填写）"
+                    className="flex-1 bg-slate-800 border border-slate-600 focus:border-emerald-500 rounded px-2 py-1 text-[11px] text-slate-300 placeholder-slate-600 outline-none transition-colors font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowWeclawToken(v => !v)}
+                    className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors shrink-0 px-1"
+                  >
+                    {showWeclawToken ? '隐藏' : '显示'}
                   </button>
                 </div>
               </div>

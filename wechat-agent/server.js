@@ -13,6 +13,8 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { exec, spawn } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 
@@ -141,6 +143,139 @@ app.get('/self-status', (_req, res) => {
     return res.json({ bound: true, nickname: envNickname, source: 'env' });
   }
   return res.json({ bound: false, nickname: null, source: null });
+});
+
+// ── weclaw 控制端点鉴权中间件 ─────────────────────────────────────────────────
+// 若服务器配置了 WECLAW_API_TOKEN，则要求 Authorization: Bearer <token>；
+// 未配置时允许所有来自反代内网的请求（wechat-agent 只监听 127.0.0.1）。
+function requireApiToken(req, res, next) {
+  const token = process.env.WECLAW_API_TOKEN;
+  if (!token) return next();
+  const auth = req.headers['authorization'] || '';
+  if (auth !== `Bearer ${token}`) {
+    return res.status(401).json({ ok: false, error: '未授权，请提供正确的 WECLAW_API_TOKEN' });
+  }
+  next();
+}
+
+// weclaw login 时写入的临时二维码文件路径（如 weclaw 支持 --qr-file 参数）
+const WECLAW_QR_FILE = path.join(os.tmpdir(), 'weclaw-qr.png');
+
+// ── GET /weclaw-status ────────────────────────────────────────────────────────
+// 返回 { running: bool, loggedIn: bool, nickname: string|null }
+// 实现：用 pm2 jlist 检查进程状态；用 weclaw status 获取登录信息（可选）
+app.get('/weclaw-status', requireApiToken, (req, res) => {
+  exec('pm2 jlist', { timeout: 5000 }, (err, stdout) => {
+    if (err) {
+      return res.json({ running: false, loggedIn: false, nickname: null });
+    }
+    let running = false;
+    try {
+      const list = JSON.parse(stdout || '[]');
+      const proc = list.find(p => p.name === 'weclaw');
+      running = proc?.pm2_env?.status === 'online';
+    } catch {
+      return res.json({ running: false, loggedIn: false, nickname: null });
+    }
+    if (!running) {
+      return res.json({ running: false, loggedIn: false, nickname: null });
+    }
+    // 进程在线：尝试 weclaw status 获取登录状态
+    exec('weclaw status 2>&1', { timeout: 5000 }, (err2, out2) => {
+      if (err2 || !out2) {
+        // weclaw status 失败时，保守地认为进程在线但状态未知（当作已登录）
+        return res.json({ running: true, loggedIn: true, nickname: null });
+      }
+      const text = out2.toString();
+      const loggedIn = /online|logged.?in|已登录|connected/i.test(text);
+      const nicknameMatch = text.match(/(?:nickname|昵称|name)[:\s]+([^\n\r]+)/i);
+      const nickname = nicknameMatch?.[1]?.trim() || null;
+      return res.json({ running: true, loggedIn, nickname });
+    });
+  });
+});
+
+// ── POST /weclaw-restart ──────────────────────────────────────────────────────
+// 重启 weclaw 并尝试捕获二维码。
+// 返回：
+//   { ok: true,  type: 'url',    qr: 'https://...' }      微信登录 URL（前端展示为图片）
+//   { ok: true,  type: 'image',  qr: 'data:image/png;base64,...' } 二维码图片
+//   { ok: false, type: 'manual', message: '...' }           无法自动获取，给出引导文字
+app.post('/weclaw-restart', requireApiToken, (req, res) => {
+  // 先删除已有的 weclaw pm2 进程（忽略错误）
+  exec('pm2 delete weclaw 2>/dev/null || true', { timeout: 10000 }, () => {
+    // 清理上次残留的二维码文件
+    try { fs.unlinkSync(WECLAW_QR_FILE); } catch { /* 不存在时忽略 */ }
+
+    let output = '';
+    let responded = false;
+    let timeoutId;
+
+    function respond(payload) {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeoutId);
+      // 清理事件监听，避免内存泄漏
+      weclawProc.stdout.removeAllListeners();
+      weclawProc.stderr.removeAllListeners();
+      res.json(payload);
+    }
+
+    // 以 weclaw login 启动，同时尝试传入 --qr-file 参数（部分版本支持）
+    // 若不支持该参数，weclaw 会忽略或报错并仍输出 URL 到 stdout/stderr
+    const args = ['login', '--qr-file', WECLAW_QR_FILE];
+    const weclawProc = spawn('weclaw', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true, // 不绑定到本进程生命周期，登录完成后可继续跑
+    });
+    weclawProc.unref();
+
+    function checkOutput() {
+      // 优先查找微信登录 URL（最可靠的二维码来源）
+      const urlMatch = output.match(/https?:\/\/login\.weixin\.qq\.com\/qrcode\/[\w-]+/);
+      if (urlMatch) {
+        respond({ ok: true, type: 'url', qr: urlMatch[0] });
+        return true;
+      }
+      // 其次查找二维码图片文件
+      if (fs.existsSync(WECLAW_QR_FILE)) {
+        try {
+          const b64 = fs.readFileSync(WECLAW_QR_FILE).toString('base64');
+          respond({ ok: true, type: 'image', qr: `data:image/png;base64,${b64}` });
+          return true;
+        } catch { /* 文件读取失败则继续等待 */ }
+      }
+      return false;
+    }
+
+    weclawProc.stdout.on('data', data => {
+      output += data.toString();
+      checkOutput();
+    });
+    weclawProc.stderr.on('data', data => {
+      output += data.toString();
+      checkOutput();
+    });
+
+    weclawProc.on('error', err => {
+      respond({
+        ok: false,
+        type: 'manual',
+        message: `无法启动 weclaw（${err.message}）。请在服务器上手动运行：weclaw login`,
+      });
+    });
+
+    // 15 秒超时：二维码通常在启动后 1-3 秒出现
+    timeoutId = setTimeout(() => {
+      if (!checkOutput()) {
+        respond({
+          ok: false,
+          type: 'manual',
+          message: '未能自动获取二维码。请在服务器上手动运行：weclaw login，扫码后点击「检查连接状态」。',
+        });
+      }
+    }, 15000);
+  });
 });
 
 // ── 模型列表（weclaw 会查这个接口） ──────────────────────────────────────────
