@@ -12,7 +12,7 @@ import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
 import { WechatSendModal } from './WechatSendModal';
-import { formatParentMessage } from '../utils/wechat';
+import { formatParentMessage, getParentContact } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatKnowledgeReferencesBlock, getKnowledgeReferences } from '../knowledgebase/search';
 
@@ -265,6 +265,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [promptPresetIdx, setPromptPresetIdx] = useState(0);
   const [customPrompt, setCustomPrompt] = useState('');
   const [wechatOpen, setWechatOpen] = useState(false);
+  const [wechatSyncing, setWechatSyncing] = useState(false);
+  const [wechatSyncMsg, setWechatSyncMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const isCustomPrompt = promptPresetIdx === PROMPT_PRESETS.length - 1;
   const activePrompt = isCustomPrompt
@@ -516,6 +518,43 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       }
     }
   }, [input, selectedId, byTask, settings, subscription, patchSession]);
+
+  // 同步已保存反馈到微信（通过 wechat-agent /send 接口）
+  const handleWechatSync = useCallback(async () => {
+    if (!selectedTask?.aiSummary) return;
+    const studentName = formatStudentNames(getStudentNames(selectedTask));
+    const contact = getParentContact(studentName);
+    if (!contact?.wechatName) {
+      setWechatSyncMsg({ type: 'err', text: '请先在设置中配置家长微信联系人（点击"发给家长"填写后保存）' });
+      setTimeout(() => setWechatSyncMsg(null), 4000);
+      return;
+    }
+    setWechatSyncing(true);
+    setWechatSyncMsg(null);
+    try {
+      const message = formatParentMessage({
+        studentName,
+        topic: selectedTask.topic,
+        feedback: selectedTask.aiSummary,
+      });
+      const resp = await fetch('/wechat-agent/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: contact.wechatName, message }),
+      });
+      const json = await resp.json() as { ok: boolean; error?: string };
+      if (json.ok) {
+        setWechatSyncMsg({ type: 'ok', text: '已发送' });
+      } else {
+        setWechatSyncMsg({ type: 'err', text: json.error ?? '发送失败，请检查 wechat-agent 配置' });
+      }
+    } catch (e: unknown) {
+      setWechatSyncMsg({ type: 'err', text: `网络错误：${e instanceof Error ? e.message : '请检查 wechat-agent 服务'}` });
+    } finally {
+      setWechatSyncing(false);
+      setTimeout(() => setWechatSyncMsg(null), 5000);
+    }
+  }, [selectedTask]);
 
   const hasFeedback = feedback.length > 0;
   const isExamTask = selectedTask?.taskType === 'exam';
@@ -826,8 +865,38 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   <MessageCircle size={10} />
                   发给家长
                 </button>
+                {selectedTask?.aiSummary && (
+                  <button
+                    onClick={handleWechatSync}
+                    disabled={wechatSyncing}
+                    title="通过 wechat-agent 机器人同步已保存反馈到微信"
+                    style={{ ...btnStyle(false), color: wechatSyncMsg?.type === 'ok' ? 'var(--green)' : '#07C160' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+                  >
+                    {wechatSyncing
+                      ? <Loader2 size={10} className="animate-spin" />
+                      : wechatSyncMsg?.type === 'ok'
+                        ? <Check size={10} />
+                        : <Send size={10} />}
+                    {wechatSyncMsg?.type === 'ok' ? '已发送' : '同步微信'}
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* WeChat sync status */}
+            {wechatSyncMsg && (
+              <div className="mb-3 flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg"
+                style={{
+                  background: wechatSyncMsg.type === 'ok' ? 'rgba(7,193,96,0.1)' : 'var(--red-dim)',
+                  border: `1px solid ${wechatSyncMsg.type === 'ok' ? 'rgba(7,193,96,0.3)' : '#5a1e1e'}`,
+                  color: wechatSyncMsg.type === 'ok' ? '#07C160' : 'var(--red)',
+                }}>
+                <AlertCircle size={11} style={{ flexShrink: 0 }} />
+                {wechatSyncMsg.text}
+              </div>
+            )}
 
             {/* Feedback plain text */}
             <div className="rounded-xl" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', padding: '16px 18px' }}>

@@ -107,6 +107,12 @@ export default function App() {
     return !!(t?.aiSummary);
   }, [selectedTaskId, taskManager.tasks]);
 
+  // 当前选中的 Task 对象（供 AgentChat 感知上下文）
+  const selectedTask = useMemo(
+    () => taskManager.tasks.find(t => t.id === selectedTaskId) ?? null,
+    [selectedTaskId, taskManager.tasks],
+  );
+
   const handleSaveSettings = useCallback((s: Settings) => {
     const next = mergePlatformApiSettings({
       language: s.language,
@@ -479,6 +485,7 @@ export default function App() {
             tasks={taskManager.tasks}
             settings={settings}
             onSaveFeedback={handleSaveToTask}
+            selectedTask={selectedTask}
           />
         </div>
       </main>

@@ -6,6 +6,7 @@ import {
 import { useAgent, type AgentMessage, type ToolCallDisplay } from '../agent/useAgent';
 import type { StudentFile } from '../agent/tools';
 import type { Task, Settings } from '../types';
+import { getStudentNames, formatStudentNames } from '../utils/student';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -398,15 +399,16 @@ interface Props {
   tasks: Task[];
   settings: Settings;
   onSaveFeedback: (taskId: string, feedback: string) => void;
+  selectedTask?: Task | null;
 }
 
-export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
+export function AgentChat({ tasks, settings, onSaveFeedback, selectedTask }: Props) {
   const subscription = useSubscription();
   const {
     messages, toolLog, globalMemory, studentFiles,
     running, streamingContent, send, stop, clear,
     deleteStudentFile,
-  } = useAgent(tasks, onSaveFeedback, settings);
+  } = useAgent(tasks, onSaveFeedback, settings, selectedTask);
 
   const quickActions = buildQuickActions(tasks);
 
@@ -460,6 +462,16 @@ export function AgentChat({ tasks, settings, onSaveFeedback }: Props) {
           >
             Agent 模式
           </span>
+          {selectedTask && (
+            <span
+              className="text-xs px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(68,147,248,0.12)', border: '1px solid rgba(68,147,248,0.3)', color: 'var(--accent)' }}
+              title="AI 助手已感知此任务内容"
+            >
+              当前上下文：{formatStudentNames(getStudentNames(selectedTask))}
+              {selectedTask.topic ? ` · ${selectedTask.topic}` : ''}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {/* Memory toggle */}

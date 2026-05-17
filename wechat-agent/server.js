@@ -37,6 +37,48 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
 // ── 健康检查 ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'wechat-agent' }));
 
+// ── 主动推送接口：Web 端一键同步反馈到微信 ────────────────────────────────────
+// POST /send  { to: "家长微信备注名", message: "消息正文" }
+// 需要环境变量 WECLAW_SEND_URL（ClawBot 主动推送地址）；
+// 可选 WECLAW_API_TOKEN（Bearer 鉴权）。
+app.post('/send', async (req, res) => {
+  const { to, message } = req.body || {};
+  if (!to || !message) {
+    return res.status(400).json({ ok: false, error: '参数缺失：需要 to（微信备注名）和 message（消息内容）' });
+  }
+
+  const sendUrl = process.env.WECLAW_SEND_URL;
+  if (!sendUrl) {
+    console.warn('[wechat-agent/send] WECLAW_SEND_URL 未配置，无法主动推送');
+    return res.status(503).json({ ok: false, error: '未配置主动推送服务（WECLAW_SEND_URL），请在服务器 .env 中添加此变量' });
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.WECLAW_API_TOKEN) {
+      headers['Authorization'] = `Bearer ${process.env.WECLAW_API_TOKEN}`;
+    }
+    const resp = await fetch(sendUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ to, msg_type: 'text', content: message }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error(`[wechat-agent/send] ClawBot API 返回 ${resp.status}:`, errText.slice(0, 200));
+      return res.status(502).json({ ok: false, error: `发送服务返回错误 ${resp.status}` });
+    }
+
+    const data = await resp.json().catch(() => ({}));
+    console.log(`[wechat-agent/send] ✅ 已发送 → ${to}（${message.length} 字）`);
+    return res.json({ ok: data.ok !== false });
+  } catch (err) {
+    console.error('[wechat-agent/send] 发送失败:', err.message);
+    return res.status(502).json({ ok: false, error: `网络请求失败：${err.message}` });
+  }
+});
+
 // ── 模型列表（weclaw 会查这个接口） ──────────────────────────────────────────
 app.get('/v1/models', (_req, res) => {
   res.json({

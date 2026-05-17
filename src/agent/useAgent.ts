@@ -118,7 +118,7 @@ ${memSection}`;
 
 // ─── 为系统提示构建当前上下文摘要 ────────────────────────────────────────────
 
-function buildContextHint(tasks: Task[]): string {
+function buildContextHint(tasks: Task[], selectedTask?: Task | null): string {
   const today = new Date().toLocaleDateString('zh-CN', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
@@ -128,7 +128,7 @@ function buildContextHint(tasks: Task[]): string {
   const totalDone = tasks.filter(t => t.status === 'done').length;
   const studentSet = new Set(tasks.map(t => t.studentName.trim()).filter(Boolean));
 
-  const parts = [
+  let result = [
     `**当前时间**：${today}`,
     `**任务概况**：共 ${tasks.length} 条任务，${totalDone} 条已完成转写，${studentSet.size} 名学生`,
     pendingFeedback > 0
@@ -139,7 +139,26 @@ function buildContextHint(tasks: Task[]): string {
       : '',
   ].filter(Boolean).join('\n');
 
-  return parts;
+  if (selectedTask) {
+    const studentNames = (selectedTask.studentNames && selectedTask.studentNames.length > 0)
+      ? selectedTask.studentNames.join('、')
+      : selectedTask.studentName;
+    const date = new Date(selectedTask.createdAt).toLocaleDateString('zh-CN');
+    const transcriptPreview = selectedTask.segments.map(s => s.text).join('').slice(0, 500);
+    const feedbackPreview = selectedTask.aiSummary?.slice(0, 500) ?? '';
+
+    const taskCtx = [
+      '\n\n**当前选中任务信息（用户正在查看此任务）**：',
+      `- 学生：${studentNames}`,
+      `- 主题：${selectedTask.topic || '（未填）'}`,
+      `- 日期：${date}`,
+      transcriptPreview ? `- 转写摘要（前500字）：${transcriptPreview}` : '',
+      feedbackPreview ? `- AI反馈（前500字）：${feedbackPreview}` : '',
+    ].filter(Boolean).join('\n');
+    result += taskCtx;
+  }
+
+  return result;
 }
 
 // ─── Streaming LLM call ───────────────────────────────────────────────────────
@@ -306,6 +325,7 @@ export function useAgent(
   tasks: Task[],
   onSaveFeedback: (taskId: string, feedback: string) => void,
   settings: Settings,
+  selectedTask?: Task | null,
 ) {
   const [messages, setMessages]         = useState<AgentMessage[]>(loadMessages);
   const [toolLog, setToolLog]           = useState<ToolCallDisplay[]>(loadLogs);
@@ -321,9 +341,11 @@ export function useAgent(
   const tasksRef        = useRef(tasks);
   const saveFeedbackRef = useRef(onSaveFeedback);
   const settingsRef     = useRef(settings);
+  const selectedTaskRef = useRef(selectedTask);
   tasksRef.current        = tasks;
   saveFeedbackRef.current = onSaveFeedback;
   settingsRef.current     = settings;
+  selectedTaskRef.current = selectedTask;
 
   // Persist messages & toolLog whenever they change
   useEffect(() => { saveMessages(messages); }, [messages]);
@@ -370,7 +392,7 @@ export function useAgent(
         content: buildSystemPrompt(
           loadGlobalMemory(),
           effectiveFeedbackPrompt(settingsRef.current),
-          buildContextHint(tasksRef.current),
+          buildContextHint(tasksRef.current, selectedTaskRef.current),
         ),
       };
       let history: AgentMessage[] = [
