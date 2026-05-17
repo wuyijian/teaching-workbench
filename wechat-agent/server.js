@@ -154,18 +154,22 @@ app.get('/v1/models', (_req, res) => {
 // ── 主接口：OpenAI-compatible Chat Completions ────────────────────────────────
 app.post('/v1/chat/completions', async (req, res) => {
   const { messages, stream, user } = req.body;
-  const lastMsg = messages?.slice(-1)[0]?.content ?? '';
-  console.log(`[req] stream=${!!stream} user=${user ?? '-'} msg="${String(lastMsg).slice(0, 80)}"`);
 
+  // weclaw 把发送者昵称放在 messages[last].name；top-level user 字段作为兜底
+  const lastUserMsg = [...(messages || [])].reverse().find(m => m.role === 'user');
+  const userMessage  = lastUserMsg?.content || '';
+  // name 字段即微信昵称，与 sendToContact 的 to 字段格式一致（备注名/昵称）
+  const senderName   = lastUserMsg?.name || user || 'unknown';
 
-  // 简单白名单鉴权
+  console.log(`[req] stream=${!!stream} sender=${senderName} msg="${String(userMessage).slice(0, 80)}"`);
+
+  // 简单白名单鉴权（按 top-level user 字段）
   if (ALLOWED_OPENIDS.length > 0 && user && !ALLOWED_OPENIDS.includes(user)) {
     return res.status(403).json({ error: { message: '无权限使用本服务' } });
   }
 
   try {
-    const userMessage = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-    const result = await handleMessage(userMessage, user || 'unknown');
+    const result = await handleMessage(userMessage, senderName);
 
     if (stream) {
       // SSE 流式响应
