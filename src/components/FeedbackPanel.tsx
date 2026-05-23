@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Sparkles, FileText, Copy, Check, Download, BookmarkCheck,
   RefreshCw, Send, Square, ChevronDown, Bot, User,
@@ -246,6 +246,10 @@ const EMPTY_SESSION: GenSession = {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes, onOpenSettings }: Props) {
   const subscription = useSubscription();
+  // Ref 模式：避免将 subscription 对象（每次 SubscriptionProvider 渲染都是新引用）
+  // 放入 useCallback 依赖数组，防止 generate/handleFollowUp 每次 context 更新都重建
+  const subscriptionRef = useRef(subscription);
+  subscriptionRef.current = subscription;
   const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (selectedTaskId) return selectedTaskId;
@@ -362,7 +366,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   const generate = useCallback(async () => {
     if (!selectedTask) return;
-    if (!subscription.requireAccess('feedback').ok) return; // 未登录 → 弹注册
+    if (!subscriptionRef.current.requireAccess('feedback').ok) return; // 未登录 → 弹注册
     const taskId = selectedTask.id;
 
     // 仅取消该任务自身的旧请求；其他任务的生成不受影响
@@ -470,7 +474,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         abortControllers.current.delete(taskId);
       }
     }
-  }, [selectedTask, settings, notes, activePrompt, subscription, patchSession]);
+  }, [selectedTask, settings, notes, activePrompt, patchSession]); // subscription 通过 subscriptionRef 访问，避免每次 context 更新重建
 
   const cancel = () => {
     if (!selectedId) return;
@@ -498,7 +502,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     if (!text || !selectedId) return;
     const session = byTask[selectedId] ?? EMPTY_SESSION;
     if (session.isFollowUp || !session.feedback) return;
-    if (!subscription.requireAccess('feedback').ok) return;
+    if (!subscriptionRef.current.requireAccess('feedback').ok) return;
 
     const taskId = selectedId;
     setInput('');
@@ -546,7 +550,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         abortControllers.current.delete(taskId);
       }
     }
-  }, [input, selectedId, byTask, settings, subscription, patchSession]);
+  }, [input, selectedId, byTask, settings, patchSession]); // subscription 通过 subscriptionRef 访问
 
   // 同步已保存反馈到微信（通过 wechat-agent /send 接口）
   const handleWechatSync = useCallback(async () => {
@@ -628,9 +632,10 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const hasAllContacts = selectedTask
     ? getStudentNames(selectedTask).every(n => !!getParentContact(n)?.wechatName)
     : true;
-  /** 任务下拉里看到「正在生成」标记 */
-  const generatingTaskIds = new Set(
-    Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)
+  /** 任务下拉里看到「正在生成」标记（useMemo 保证引用稳定，避免 TaskSelector 无效重渲染） */
+  const generatingTaskIds = useMemo(
+    () => new Set(Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)),
+    [byTask],
   );
 
   const btnStyle = (active = false) => ({

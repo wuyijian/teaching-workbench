@@ -84,22 +84,26 @@ export default function App() {
   const onboarding = useOnboarding();
 
   // 监听 OnboardingGuide 内部事件，推进步骤
+  // 使用 onboarding.advance（stable useCallback）而非整个 onboarding 对象，
+  // 避免因对象引用每次渲染变化导致 effect 重复注册 / 清理事件监听
+  const { advance: onboardingAdvance } = onboarding;
   useEffect(() => {
     const onTranscript = (e: Event) => {
       const id = (e as CustomEvent<{ id: string }>).detail.id;
       setSelectedTaskId(id);
-      onboarding.advance('transcript');
+      onboardingAdvance('transcript');
     };
-    const onFeedback = () => onboarding.advance('feedback');
+    const onFeedback = () => onboardingAdvance('feedback');
     window.addEventListener('onboarding:transcript', onTranscript);
     window.addEventListener('onboarding:feedback', onFeedback);
     return () => {
       window.removeEventListener('onboarding:transcript', onTranscript);
       window.removeEventListener('onboarding:feedback', onFeedback);
     };
-  }, [onboarding]);
+  }, [onboardingAdvance]);
 
   // Demo 注入函数（由 OnboardingGuide 调用）
+  // 使用 taskManager.injectDoneTask（stable useCallback）避免随 taskManager 对象引用变化而重建
   const handleInjectDemo = useCallback(() => {
     const prompt = settings.feedbackPrompt ?? '';
     return taskManager.injectDoneTask(
@@ -109,7 +113,7 @@ export default function App() {
       DEMO_LESSON.audioFileName,
       DEMO_LESSON.segments,
     );
-  }, [taskManager, settings.feedbackPrompt]);
+  }, [taskManager.injectDoneTask, settings.feedbackPrompt]);
 
   // 当前选中任务是否已有 AI 反馈（供引导检测）
   const selectedTaskHasFeedback = useMemo(() => {
@@ -145,6 +149,8 @@ export default function App() {
     handleSaveSettings({ ...settings, language: lang });
   }, [settings, handleSaveSettings]);
 
+  // 以下 handlers 依赖 taskManager 的具体方法（均为 stable useCallback），
+  // 而非整个 taskManager 对象，避免每次渲染都重建这些回调
   const handleCreateTask = useCallback((
     names: string[],
     topic: string,
@@ -157,15 +163,15 @@ export default function App() {
     examFileRaw?: File,
   ) => {
     taskManager.createTask(names, topic, prompt, file, engine, examAnalysis, examFile, examFileDataUrl, examFileRaw);
-  }, [taskManager]);
+  }, [taskManager.createTask]);
 
   const handleSaveToTask = useCallback((taskId: string, summary: string) => {
     taskManager.saveAISummary(taskId, summary);
-  }, [taskManager]);
+  }, [taskManager.saveAISummary]);
 
   const handleSaveNotes = useCallback((taskId: string, notes: string) => {
     taskManager.saveNotes(taskId, notes);
-  }, [taskManager]);
+  }, [taskManager.saveNotes]);
 
   // 手机端选中任务时自动跳到详情页
   const handleSelectTask = useCallback((id: string | null) => {
