@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, FileText, RotateCcw, Bot, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, FileText, RotateCcw, Bot, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound, ChevronDown, ChevronRight, Bell } from 'lucide-react';
 import { FEEDBACK_PROMPT } from './TaskPanel';
 import type { Settings } from '../types';
 import { getAllParentContacts, setParentContact, deleteParentContact } from '../utils/wechat';
 import type { ParentContact } from '../utils/wechat';
+import { wechatAgentBase } from '../config/urls';
 
 interface Props {
   settings: Settings;
@@ -28,6 +29,17 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   const [enableKnowledgeBase, setEnableKnowledgeBase] = useState(
     () => settings.enableKnowledgeBase ?? true,
   );
+
+  const isMacElectron =
+    typeof window !== 'undefined' &&
+    window.electronAPI?.platform === 'darwin';
+
+  const handleTestNotification = useCallback(() => {
+    window.electronAPI?.showNotification?.({
+      title: '教学工作台',
+      body: '这是一条测试系统通知，转写和反馈完成时将弹出此类提醒 ✅',
+    });
+  }, []);
 
   // ── WeChat state ──────────────────────────────────────────────────────────
   const [selfBindStatus, setSelfBindStatus] = useState<SelfBindStatus>('idle');
@@ -76,7 +88,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     setSelfBindStatus('checking');
     setSelfBindNickname(null);
     try {
-      const resp = await fetch('/wechat-agent/self-status', { signal: AbortSignal.timeout(5000) });
+      const resp = await fetch(`${wechatAgentBase}/self-status`, { signal: AbortSignal.timeout(5000) });
       if (resp.ok) {
         const data = await resp.json() as { bound: boolean; nickname: string | null };
         setSelfBindStatus(data.bound ? 'bound' : 'unbound');
@@ -101,7 +113,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     try {
       const headers: Record<string, string> = {};
       if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
-      const resp = await fetch('/wechat-agent/weclaw-status', {
+      const resp = await fetch(`${wechatAgentBase}/weclaw-status`, {
         headers,
         signal: AbortSignal.timeout(6000),
       });
@@ -144,7 +156,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
-      const resp = await fetch('/wechat-agent/weclaw-restart', {
+      const resp = await fetch(`${wechatAgentBase}/weclaw-restart`, {
         method: 'POST',
         headers,
         signal: AbortSignal.timeout(20000),
@@ -639,6 +651,28 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
               </div>
 
             </div>
+
+            {/* ── Mac native notification hint ───────────────────────── */}
+            {isMacElectron && (
+              <div className="px-3 py-3 border-t border-slate-700/50">
+                <div className="flex items-start gap-2 rounded-lg border border-sky-700/30 bg-sky-950/20 px-3 py-2.5">
+                  <Bell size={12} className="text-sky-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <p className="text-[11px] text-sky-300 font-medium">Mac 客户端已支持系统通知</p>
+                    <p className="text-[11px] text-sky-400/80 leading-relaxed">
+                      转写完成和反馈发送时将弹出系统提醒，即使应用在后台也能收到通知。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleTestNotification}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-md border border-sky-600/40 text-sky-300 hover:bg-sky-900/30 transition-colors"
+                    >
+                      <Bell size={10} /> 发送测试通知
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* bottom spacing */}

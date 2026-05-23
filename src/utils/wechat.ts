@@ -3,7 +3,10 @@
  *
  * Web 端：复制到剪贴板 + weixin:// 唤起微信（浏览器沙箱不能自动化桌面）
  * Electron 端（Windows）：IPC → 主进程 PowerShell 自动控制微信客户端
+ * Electron 端（Mac）：IPC → 主进程 Notification 原生系统通知
  */
+
+import { wechatAgentBase } from '../config/urls';
 
 // ─── 家长微信信息存储（localStorage） ────────────────────────────────────────
 
@@ -100,7 +103,7 @@ export async function electronSendViaWechat(
   contactName: string,
   message: string,
 ): Promise<SendResult> {
-  const api = (window as Window & { electronAPI?: { sendWechat?: (c: string, m: string) => Promise<SendResult> } }).electronAPI;
+  const api = (window as Window & typeof globalThis).electronAPI;
   if (!api?.sendWechat) return { ok: false, reason: 'not_windows', message: '当前版本不支持自动发送（仅 Windows Electron 端）' };
   return api.sendWechat(contactName, message);
 }
@@ -110,7 +113,7 @@ export async function sendFeedbackToParent(
   contactName: string,
   message: string,
 ): Promise<SendResult> {
-  const isElectron = !!(window as Window & { electronAPI?: unknown }).electronAPI;
+  const isElectron = !!(window as Window & typeof globalThis).electronAPI;
   if (isElectron) return electronSendViaWechat(contactName, message);
   return webSendViaClipboard(message);
 }
@@ -119,9 +122,16 @@ export async function sendFeedbackToParent(
 
 const MAX_AUTO_MSG_LENGTH = 500;
 
+/** 在 Electron 环境下触发原生系统通知（fire-and-forget） */
+function fireNativeNotification(body: string): void {
+  const api = (window as Window & typeof globalThis).electronAPI;
+  api?.showNotification?.({ title: '教学工作台', body: body.slice(0, 100) });
+}
+
 /**
  * 向老师自己的微信发送通知（fire-and-forget）。
  * - 调用 /wechat-agent/send-self；若服务端未配置 WECLAW_SELF_NICKNAME，静默跳过。
+ * - Electron 环境下额外触发系统原生通知。
  * - 失败时仅 console.warn，不抛异常，不阻塞主流程。
  */
 export function notifySelf(message: string): void {
@@ -129,7 +139,9 @@ export function notifySelf(message: string): void {
     ? message.slice(0, MAX_AUTO_MSG_LENGTH) + '…'
     : message;
 
-  fetch('/wechat-agent/send-self', {
+  fireNativeNotification(truncated);
+
+  fetch(`${wechatAgentBase}/send-self`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: truncated }),
@@ -148,6 +160,7 @@ export function notifySelf(message: string): void {
 /**
  * 向指定学生的家长发送微信通知（fire-and-forget）。
  * - 若未绑定家长联系人，静默跳过。
+ * - Electron 环境下额外触发系统原生通知。
  * - 失败时仅 console.warn，不抛异常，不阻塞主流程。
  */
 export function notifyParent(studentName: string, message: string): void {
@@ -158,7 +171,9 @@ export function notifyParent(studentName: string, message: string): void {
     ? message.slice(0, MAX_AUTO_MSG_LENGTH) + '…'
     : message;
 
-  fetch('/wechat-agent/send', {
+  fireNativeNotification(`${studentName}：${truncated}`);
+
+  fetch(`${wechatAgentBase}/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ to: contact.wechatName, message: truncated }),

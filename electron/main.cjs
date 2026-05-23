@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, nativeTheme, session, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeTheme, session, dialog, ipcMain, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
@@ -265,6 +265,13 @@ ipcMain.handle('wechat:send', async (_event, contactName, message) => {
       resolve({ ok: false, reason: 'error', message: String(e) });
     }
   });
+});
+
+// 原生系统通知（macOS / Linux / Windows 均支持，macOS 需要 app 签名或通知授权）
+ipcMain.on('show-notification', (_event, { title, body }) => {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
 });
 
 // 原生文件选择对话框，绕过 macOS 对渲染进程 input[type=file] 的限制
