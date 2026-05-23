@@ -1,6 +1,6 @@
 {
   "name": "teaching-workbench",
-  "productName": "语文教学工作�?,
+  "productName": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
   "private": true,
   "version": "1.2.8",
   "type": "module",
@@ -26,8 +26,8 @@
   },
   "build": {
     "appId": "com.teaching.workbench",
-    "productName": "语文教学工作�?,
-    "copyright": "Copyright © 2026",
+    "productName": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
+    "copyright": "Copyright Â© 2026",
     "directories": {
       "output": "release",
       "buildResources": "build-assets"
@@ -56,7 +56,7 @@
       "entitlementsInherit": "build-assets/entitlements.mac.plist"
     },
     "dmg": {
-      "title": "语文教学工作�?,
+      "title": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
       "contents": [
         {
           "x": 130,
