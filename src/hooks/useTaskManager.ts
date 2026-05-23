@@ -48,17 +48,32 @@ type SerializedTask = Omit<Task, 'audioFile'>;
 /** 旧版逐任务归档字段（迁移用） */
 type LegacyTaskFields = { archived?: boolean; archivedAt?: number };
 
+/**
+ * 修正从持久化存储（localStorage 或 Supabase）读取时可能残留的中间状态。
+ * 以 segments 为事实依据：有内容 → done；无内容 → error（无法恢复上传）。
+ */
+function sanitizeHydratedTask(task: Task): Task {
+  const stuck = task.status === 'uploading' || task.status === 'transcribing' || task.status === 'queued';
+  if (!stuck) return task;
+  if (task.segments && task.segments.length > 0) {
+    return { ...task, status: 'done', progress: 100, error: null };
+  }
+  return { ...task, status: 'error', error: task.error ?? '页面刷新后转写中断，请重新上传' };
+}
+
 function saveTasks(tasks: Task[]) {
   try {
     const serializable: SerializedTask[] = tasks.map(({ audioFile: _f, ...rest }) => {
       const { examFileDataUrl: _d, ...withoutExamDataUrl } = rest;
+      // 进行中（含排队中）的任务页面关闭后无法恢复，重置为错误状态
+      const stuckInProgress =
+        withoutExamDataUrl.status === 'uploading' ||
+        withoutExamDataUrl.status === 'transcribing' ||
+        withoutExamDataUrl.status === 'queued';
       return {
         ...withoutExamDataUrl,
-        // 进行中的任务页面关闭后无法恢复，重置为错误状态
-        status: (withoutExamDataUrl.status === 'uploading' || withoutExamDataUrl.status === 'transcribing')
-          ? 'error'
-          : withoutExamDataUrl.status,
-        error: (withoutExamDataUrl.status === 'uploading' || withoutExamDataUrl.status === 'transcribing')
+        status: stuckInProgress ? 'error' : withoutExamDataUrl.status,
+        error: stuckInProgress
           ? '页面刷新后转写中断，请重新上传'
           : withoutExamDataUrl.error,
         // Kimi 上传中途页面关闭 → 重置为 error，提示用户重新上传
@@ -73,7 +88,9 @@ function loadTasks(): Task[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as Task[];
+    const parsed = JSON.parse(raw) as Task[];
+    // 二次校验：saveTasks 已做转换，但防止旧版本写入的脏数据残留
+    return parsed.map(sanitizeHydratedTask);
   } catch {
     return [];
   }

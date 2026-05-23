@@ -93,6 +93,20 @@ function rowToTask(row: TaskRow, segments: SegmentRow[]): Task {
   const studentName =
     studentNames.length > 0 ? studentNames.join('、') : '';
 
+  // 修正云端可能残留的中间状态：以 segments 为事实依据
+  // 场景：任务完成后 upsertTask 失败，Supabase 仍保存 uploading/queued；
+  //       页面刷新时云端数据会覆盖本地正确的 done 状态，导致显示"上传中"。
+  const rawStatus = (row.status ?? 'queued') as Task['status'];
+  const stuckInProgress =
+    rawStatus === 'uploading' || rawStatus === 'transcribing' || rawStatus === 'queued';
+  const status: Task['status'] = stuckInProgress
+    ? (sortedSegments.length > 0 ? 'done' : 'error')
+    : rawStatus;
+  const progress = status === 'done' ? 100 : (row.progress ?? 0);
+  const errorMessage = stuckInProgress && status === 'error'
+    ? (row.error_message ?? '页面刷新后转写中断，请重新上传')
+    : (row.error_message ?? null);
+
   return {
     id: row.id,
     studentName,
@@ -101,10 +115,10 @@ function rowToTask(row: TaskRow, segments: SegmentRow[]): Task {
     prompt: row.feedback_prompt ?? '',
     engine: (row.engine ?? 'volcano') as Task['engine'],
     audioFileName: row.audio_file_name ?? '',
-    status: (row.status ?? 'queued') as Task['status'],
-    progress: row.progress ?? 0,
+    status,
+    progress,
     segments: sortedSegments,
-    error: row.error_message ?? null,
+    error: errorMessage,
     createdAt: new Date(row.created_at).getTime(),
     estimateMs: row.duration_sec != null ? row.duration_sec * 1000 : undefined,
     notes: row.notes ?? undefined,
