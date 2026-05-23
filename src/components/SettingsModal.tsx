@@ -5,6 +5,7 @@ import type { Settings } from '../types';
 import { getAllParentContacts, setParentContact, deleteParentContact } from '../utils/wechat';
 import type { ParentContact } from '../utils/wechat';
 import { wechatAgentBase } from '../config/urls';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 interface Props {
   settings: Settings;
@@ -88,7 +89,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     setSelfBindStatus('checking');
     setSelfBindNickname(null);
     try {
-      const resp = await fetch(`${wechatAgentBase}/self-status`, { signal: AbortSignal.timeout(5000) });
+      const resp = await fetchWithTimeout(`${wechatAgentBase}/self-status`, {}, 5000);
       if (resp.ok) {
         const data = await resp.json() as { bound: boolean; nickname: string | null };
         setSelfBindStatus(data.bound ? 'bound' : 'unbound');
@@ -113,10 +114,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     try {
       const headers: Record<string, string> = {};
       if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
-      const resp = await fetch(`${wechatAgentBase}/weclaw-status`, {
-        headers,
-        signal: AbortSignal.timeout(6000),
-      });
+      const resp = await fetchWithTimeout(`${wechatAgentBase}/weclaw-status`, { headers }, 6000);
       if (!resp.ok) { setWeclawStatus('err'); return; }
       const data = await resp.json() as {
         running: boolean;
@@ -156,11 +154,10 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (weclawToken) headers['Authorization'] = `Bearer ${weclawToken}`;
-      const resp = await fetch(`${wechatAgentBase}/weclaw-restart`, {
+      const resp = await fetchWithTimeout(`${wechatAgentBase}/weclaw-restart`, {
         method: 'POST',
         headers,
-        signal: AbortSignal.timeout(20000),
-      });
+      }, 20000);
       const data = await resp.json() as {
         ok: boolean; type: string; qr?: string; message?: string;
       };

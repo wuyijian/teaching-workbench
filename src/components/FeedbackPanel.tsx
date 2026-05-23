@@ -8,6 +8,7 @@ import type { Task, Settings } from '../types';
 import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -349,7 +350,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
 
   // 检查 weclaw 是否在线（挂载时做一次，不阻塞主流程）
   useEffect(() => {
-    fetch('/wechat-agent/weclaw-status', { signal: AbortSignal.timeout(5000) })
+    fetchWithTimeout('/wechat-agent/weclaw-status', {}, 5000)
       .then(r => r.ok ? r.json() : null)
       .then((data: { running: boolean; sessionExpired?: boolean } | null) => {
         if (data) setWeclawOffline(!data.running || data.sessionExpired === true);
@@ -611,7 +612,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       } else {
         setWechatSyncMsg({ type: 'err', text: errors.join('；') });
         // 发送失败时重新检查 weclaw 状态以更新离线指示
-        fetch('/wechat-agent/weclaw-status', { signal: AbortSignal.timeout(5000) })
+        fetchWithTimeout('/wechat-agent/weclaw-status', {}, 5000)
           .then(r => r.ok ? r.json() : null)
           .then((d: { running: boolean; sessionExpired?: boolean } | null) => {
             if (d) setWeclawOffline(!d.running || d.sessionExpired === true);
