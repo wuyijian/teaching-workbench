@@ -14,7 +14,7 @@ interface Props {
 }
 
 type SelfBindStatus = 'idle' | 'checking' | 'bound' | 'unbound' | 'err';
-type WeclawStatus = 'idle' | 'checking' | 'online_loggedin' | 'online_loggedout' | 'stopped' | 'err';
+type WeclawStatus = 'idle' | 'checking' | 'online_loggedin' | 'online_loggedout' | 'session_expired' | 'stopped' | 'err';
 
 type WeclawQr =
   | { type: 'url'; data: string }
@@ -106,9 +106,19 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
         signal: AbortSignal.timeout(6000),
       });
       if (!resp.ok) { setWeclawStatus('err'); return; }
-      const data = await resp.json() as { running: boolean; loggedIn: boolean; nickname: string | null };
+      const data = await resp.json() as {
+        running: boolean;
+        loggedIn: boolean;
+        nickname: string | null;
+        sessionExpired?: boolean;
+        lastChecked?: string | null;
+        autoRestartCount?: number;
+      };
       if (!data.running) {
         setWeclawStatus('stopped');
+      } else if (data.sessionExpired) {
+        setWeclawStatus('session_expired');
+        setWeclawNickname(data.nickname);
       } else if (data.loggedIn) {
         setWeclawStatus('online_loggedin');
         setWeclawNickname(data.nickname);
@@ -193,7 +203,8 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     setEditingKey(null);
   };
 
-  const weclawConnected = weclawStatus === 'online_loggedin';
+  const weclawConnected    = weclawStatus === 'online_loggedin';
+  const weclawNeedsRescan  = weclawStatus === 'session_expired';
 
   return (
     <div
@@ -291,6 +302,9 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                     {weclawStatus === 'online_loggedin' && (
                       <span className="text-emerald-400">✅ 已连接{weclawNickname ? `：${weclawNickname}` : ''}</span>
                     )}
+                    {weclawStatus === 'session_expired' && (
+                      <span className="text-orange-400">🔄 Session 已过期</span>
+                    )}
                     {weclawStatus === 'online_loggedout' && (
                       <span className="text-amber-400">⚠️ 等待扫码</span>
                     )}
@@ -310,11 +324,26 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                 <div className={`rounded-lg border px-3 py-2.5 space-y-2.5 ${
                   weclawConnected
                     ? 'border-emerald-700/40 bg-emerald-950/20'
+                    : weclawStatus === 'session_expired'
+                    ? 'border-orange-600/40 bg-orange-950/20'
                     : 'border-amber-700/30 bg-amber-950/15'
                 }`}>
                   <p className="text-[11px] text-slate-400">
                     扫码后 weclaw 将连接到老师微信，自动接收并中转消息
                   </p>
+
+                  {/* Session expired warning */}
+                  {weclawStatus === 'session_expired' && (
+                    <div className="flex items-start gap-2 rounded-lg border border-orange-600/40 bg-orange-950/30 px-3 py-2">
+                      <span className="text-orange-400 text-xs shrink-0">⚠️</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-orange-300 font-medium">微信 Session 已过期</p>
+                        <p className="text-[11px] text-orange-400/80 mt-0.5">
+                          消息将无法转发。请重新扫码登录以恢复连接。
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* QR code display */}
                   {weclawQr && (
@@ -350,7 +379,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-2">
-                    {weclawConnected ? (
+                    {weclawConnected && !weclawNeedsRescan ? (
                       <>
                         <button
                           type="button"
@@ -369,6 +398,18 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                           重新连接
                         </button>
                       </>
+                    ) : weclawNeedsRescan ? (
+                      /* Session expired — 突出显示"重新扫码"按钮 */
+                      <button
+                        type="button"
+                        onClick={handleRestartWeclaw}
+                        disabled={weclawRestarting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-md bg-orange-500/10 border border-orange-500/40 text-orange-300 hover:bg-orange-500/20 transition-colors disabled:opacity-50 w-full justify-center font-medium"
+                      >
+                        {weclawRestarting
+                          ? <><RefreshCw size={11} className="animate-spin" /> 正在获取二维码…</>
+                          : <><QrCode size={11} /> 重新扫码登录</>}
+                      </button>
                     ) : (
                       <button
                         type="button"

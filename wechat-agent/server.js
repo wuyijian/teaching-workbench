@@ -53,6 +53,60 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
+// ── weclaw 健康监控状态（内存） ───────────────────────────────────────────────
+const weclawHealth = {
+  lastChecked: null,   // ISO 字符串，上次检查时间
+  autoRestartCount: 0, // 自动重启次数
+  sessionExpired: false,
+  weclawRunning: false,
+};
+
+/** 检查 weclaw 进程状态，必要时自动重启，并扫描日志中的 session 过期关键词 */
+function checkWeclawHealth() {
+  weclawHealth.lastChecked = new Date().toISOString();
+
+  exec('pm2 jlist', { timeout: 5000 }, (err, stdout) => {
+    let pm2Running = false;
+    if (!err) {
+      try {
+        const list = JSON.parse(stdout || '[]');
+        const proc = list.find(p => p.name === 'weclaw');
+        pm2Running = proc?.pm2_env?.status === 'online';
+      } catch { /* ignore parse errors */ }
+    }
+
+    if (!pm2Running) {
+      weclawHealth.weclawRunning = false;
+      // 尝试自动重启（仅当 pm2 知道此进程时有效，否则静默失败）
+      exec('pm2 restart weclaw 2>/dev/null', { timeout: 10000 }, (restartErr) => {
+        if (!restartErr) {
+          weclawHealth.autoRestartCount++;
+          weclawHealth.weclawRunning = true;
+          console.log(`[health] ✅ weclaw 自动重启成功（第 ${weclawHealth.autoRestartCount} 次）`);
+        } else {
+          console.warn('[health] ⚠️ weclaw 自动重启失败（进程可能未被 pm2 管理）:', restartErr.message);
+        }
+      });
+    } else {
+      weclawHealth.weclawRunning = true;
+      // 读最新日志，检测 session 过期关键词
+      exec('pm2 logs weclaw --lines 100 --nostream 2>&1', { timeout: 8000 }, (logErr, logOut) => {
+        if (logErr || !logOut) return;
+        const text = logOut.toString();
+        const expired = /session.?expired|login.?required|need.?re.?login|需要重新登录|session\s*失效|re.?login/i.test(text);
+        if (expired !== weclawHealth.sessionExpired) {
+          console.log(`[health] session 过期状态变更 → ${expired}`);
+          weclawHealth.sessionExpired = expired;
+        }
+      });
+    }
+  });
+}
+
+// 启动 15 秒后做第一次健康检查，此后每 60 秒检查一次
+setTimeout(checkWeclawHealth, 15 * 1000);
+setInterval(checkWeclawHealth, 60 * 1000);
+
 // ── 健康检查 ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'wechat-agent' }));
 
@@ -162,9 +216,18 @@ function requireApiToken(req, res, next) {
 const WECLAW_QR_FILE = path.join(os.tmpdir(), 'weclaw-qr.png');
 
 // ── GET /weclaw-status ────────────────────────────────────────────────────────
-// 返回 { running: bool, loggedIn: bool, nickname: string|null }
-// 实现：用 pm2 jlist 检查进程状态；用 weclaw status 获取登录信息（可选）
+// 返回 { running, loggedIn, nickname, sessionExpired, lastChecked, autoRestartCount }
 app.get('/weclaw-status', requireApiToken, (req, res) => {
+  /** 将健康监控字段附加到响应 payload */
+  function withHealth(base) {
+    return {
+      ...base,
+      sessionExpired:    weclawHealth.sessionExpired,
+      lastChecked:       weclawHealth.lastChecked,
+      autoRestartCount:  weclawHealth.autoRestartCount,
+    };
+  }
+
   exec('pm2 jlist', { timeout: 5000 }, (err, stdout) => {
     let pm2Running = false;
     if (!err) {
@@ -176,31 +239,36 @@ app.get('/weclaw-status', requireApiToken, (req, res) => {
     }
 
     if (pm2Running) {
-      // pm2 进程在线：读取 pm2 日志判断是否已登录
-      exec('pm2 logs weclaw --lines 50 --nostream 2>&1', { timeout: 8000 }, (err2, out2) => {
+      // pm2 进程在线：读取 pm2 日志判断是否已登录 / session 是否过期
+      exec('pm2 logs weclaw --lines 100 --nostream 2>&1', { timeout: 8000 }, (err2, out2) => {
         if (err2 || !out2) {
-          return res.json({ running: true, loggedIn: true, nickname: null });
+          return res.json(withHealth({ running: true, loggedIn: true, nickname: null }));
         }
         const text = out2.toString();
-        const loggedIn = /logged.?in|login.?success|已登录|扫码成功|connected/i.test(text);
+        const loggedIn    = /logged.?in|login.?success|已登录|扫码成功|connected/i.test(text);
         const waitingScan = /waiting.?for.?scan|scan.?this.?qr|等待扫码/i.test(text);
+        const expired     = /session.?expired|login.?required|need.?re.?login|需要重新登录|session\s*失效|re.?login/i.test(text);
         const nicknameMatch = text.match(/(?:nickname|昵称|name)[:\s]+([^\n\r]+)/i);
-        const nickname = nicknameMatch?.[1]?.trim() || null;
+        const nickname    = nicknameMatch?.[1]?.trim() || null;
         const finalLoggedIn = loggedIn || (!waitingScan);
-        return res.json({ running: true, loggedIn: finalLoggedIn, nickname });
+        // 同步更新内存健康状态
+        weclawHealth.weclawRunning  = true;
+        weclawHealth.sessionExpired = expired;
+        return res.json(withHealth({ running: true, loggedIn: finalLoggedIn, nickname }));
       });
       return; // 等待 pm2 logs 回调
     }
 
-    // pm2 中没有 weclaw —— 检查是否存在游离进程（登录子进程或手动启动的进程）
+    // pm2 中没有 weclaw —— 检查是否存在游离进程
     exec("pgrep -f 'weclaw' 2>/dev/null || ps aux 2>/dev/null | grep -v grep | grep weclaw | awk '{print $2}'", { timeout: 5000 }, (pgrepErr, pgrepOut) => {
       const pids = (pgrepOut || '').trim().split('\n').filter(Boolean);
       if (pids.length > 0) {
-        // 游离进程存在（消息仍可转发），视为 running
         console.log(`[weclaw-status] 检测到游离 weclaw 进程（pids: ${pids.join(',')}），非 pm2 管理`);
-        return res.json({ running: true, loggedIn: true, nickname: null });
+        weclawHealth.weclawRunning = true;
+        return res.json(withHealth({ running: true, loggedIn: true, nickname: null }));
       }
-      return res.json({ running: false, loggedIn: false, nickname: null });
+      weclawHealth.weclawRunning = false;
+      return res.json(withHealth({ running: false, loggedIn: false, nickname: null }));
     });
   });
 });
@@ -266,7 +334,7 @@ app.post('/weclaw-restart', requireApiToken, (req, res) => {
       console.log('[weclaw-restart] 检测到登录成功，将 weclaw 纳入 pm2 管理...');
       // 先结束 login 子进程，再通过 pm2 以守护进程方式启动 weclaw
       try { weclawProc.kill(); } catch { /* 进程可能已退出 */ }
-      exec('pm2 start weclaw --name weclaw -- start && pm2 save', { timeout: 15000 }, (err, stdout, stderr) => {
+      exec('pm2 start weclaw --name weclaw --max-restarts 3 --restart-delay 5000 -- start && pm2 save', { timeout: 15000 }, (err, stdout, stderr) => {
         if (err) {
           console.error('[weclaw-restart] pm2 start 失败:', err.message, stderr);
         } else {
