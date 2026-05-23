@@ -268,6 +268,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [customPrompt, setCustomPrompt] = useState('');
   const [wechatOpen, setWechatOpen] = useState(false);
   const [wechatSyncing, setWechatSyncing] = useState(false);
+  // Weclaw offline / session-expired indicator (checked once on mount, refreshed after sync errors)
+  const [weclawOffline, setWeclawOffline] = useState(false);
   const [wechatSyncMsg, setWechatSyncMsg] = useState<{
     type: 'ok' | 'err';
     text: string;
@@ -340,6 +342,16 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       if (done[0]) setSelectedId(done[0].id);
     }
   }, [tasks, selectedId]);
+
+  // 检查 weclaw 是否在线（挂载时做一次，不阻塞主流程）
+  useEffect(() => {
+    fetch('/wechat-agent/weclaw-status', { signal: AbortSignal.timeout(5000) })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { running: boolean; sessionExpired?: boolean } | null) => {
+        if (data) setWeclawOffline(!data.running || data.sessionExpired === true);
+      })
+      .catch(() => { /* 静默 */ });
+  }, []);
 
   const handleNotesChange = useCallback((val: string) => {
     setNotes(val);
@@ -591,11 +603,20 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           type: 'ok',
           text: names.length > 1 ? `已发送给 ${names.length} 位家长` : '已发送',
         });
+        setWeclawOffline(false);
       } else {
         setWechatSyncMsg({ type: 'err', text: errors.join('；') });
+        // 发送失败时重新检查 weclaw 状态以更新离线指示
+        fetch('/wechat-agent/weclaw-status', { signal: AbortSignal.timeout(5000) })
+          .then(r => r.ok ? r.json() : null)
+          .then((d: { running: boolean; sessionExpired?: boolean } | null) => {
+            if (d) setWeclawOffline(!d.running || d.sessionExpired === true);
+          })
+          .catch(() => { setWeclawOffline(true); });
       }
     } catch (e: unknown) {
       setWechatSyncMsg({ type: 'err', text: `网络错误：${e instanceof Error ? e.message : '请检查 wechat-agent 服务'}` });
+      setWeclawOffline(true);
     } finally {
       setWechatSyncing(false);
       setTimeout(() => setWechatSyncMsg(null), 5000);
@@ -919,20 +940,26 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                     onClick={handleWechatSync}
                     disabled={wechatSyncing}
                     title={
-                      hasAllContacts
-                        ? '手动重新发送已保存反馈到微信'
-                        : '有学生未绑定家长微信，点击后将提示去设置页配置'
+                      weclawOffline
+                        ? 'weclaw 当前离线或 session 已过期，发送可能失败，请前往设置重新扫码'
+                        : hasAllContacts
+                          ? '手动重新发送已保存反馈到微信'
+                          : '有学生未绑定家长微信，点击后将提示去设置页配置'
                     }
                     style={{
                       ...btnStyle(false),
                       color: wechatSyncMsg?.type === 'ok'
                         ? 'var(--green)'
-                        : hasAllContacts
-                          ? '#07C160'
-                          : '#f59e0b',
-                      borderColor: !hasAllContacts && wechatSyncMsg?.type !== 'ok'
-                        ? '#92400e'
-                        : undefined,
+                        : weclawOffline
+                          ? '#f97316'
+                          : hasAllContacts
+                            ? '#07C160'
+                            : '#f59e0b',
+                      borderColor: weclawOffline && wechatSyncMsg?.type !== 'ok'
+                        ? '#7c2d12'
+                        : !hasAllContacts && wechatSyncMsg?.type !== 'ok'
+                          ? '#92400e'
+                          : undefined,
                     }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
@@ -941,9 +968,11 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                       ? <Loader2 size={10} className="animate-spin" />
                       : wechatSyncMsg?.type === 'ok'
                         ? <Check size={10} />
-                        : hasAllContacts
-                          ? <Send size={10} />
-                          : <AlertCircle size={10} />}
+                        : weclawOffline
+                          ? <AlertCircle size={10} />
+                          : hasAllContacts
+                            ? <Send size={10} />
+                            : <AlertCircle size={10} />}
                     {wechatSyncMsg?.type === 'ok' ? '已发送' : '重新发送'}
                   </button>
                 )}

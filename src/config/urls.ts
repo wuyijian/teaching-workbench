@@ -23,6 +23,15 @@ export const volcanoProxyBase = isElectron
   : trim((import.meta.env.VITE_VOLCANO_PROXY_BASE as string | undefined)?.trim() || '/volcano-api');
 
 /**
+ * 微信 Agent API 基路径。
+ * - Electron：直连生产服务器（file:// 无法使用相对路径）
+ * - 网页：走同域反代 /wechat-agent（需在 Nginx/Vercel 配置）
+ */
+export const wechatAgentBase = isElectron
+  ? 'https://yixiaojian.top/wechat-agent'
+  : '/wechat-agent';
+
+/**
  * Whisper / OpenAI-compatible 音频转写基路径。
  * Electron 里 settings.apiBaseUrl 可能被历史存档为相对路径，需在调用处统一处理。
  */

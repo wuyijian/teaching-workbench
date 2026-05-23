@@ -14,4 +14,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @param message     要发送的文字内容
    */
   sendWechat: (contactName, message) => ipcRenderer.invoke('wechat:send', contactName, message),
+  /**
+   * 触发系统原生通知（macOS / Windows / Linux）。
+   * @param opts.title 通知标题
+   * @param opts.body  通知正文（建议 ≤100 字符）
+   */
+  showNotification: ({ title, body }) => ipcRenderer.send('show-notification', { title, body }),
 });
