@@ -351,8 +351,8 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
             </p>
           </div>
 
-          {/* ── WeChat Config Section ─────────────────────────────────────── */}
-          <div ref={wechatRef} className="rounded-xl border border-slate-700 overflow-hidden">
+          {/* ── WeChat Config Section (temporarily hidden) ───────────────── */}
+          {(false as boolean) && <div ref={wechatRef} className="rounded-xl border border-slate-700 overflow-hidden">
             {/* Section header */}
             <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-800/60 border-b border-slate-700">
               <Bot size={13} className="text-[#07C160]" />
@@ -784,7 +784,7 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                 </div>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* bottom spacing */}
           <div className="h-1" />
