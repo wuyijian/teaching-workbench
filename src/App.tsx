@@ -482,6 +482,7 @@ export default function App() {
         >
           <StudentArchive
             tasks={taskManager.tasks}
+            settings={settings}
             onGotoTask={handleGotoTask}
           />
         </div>

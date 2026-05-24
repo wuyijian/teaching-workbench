@@ -1,6 +1,6 @@
 {
   "name": "teaching-workbench",
-  "productName": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
+  "productName": "语文教学工作台",
   "private": true,
   "version": "1.2.8",
   "type": "module",
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.teaching.workbench",
-    "productName": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
+    "productName": "语文教学工作台",
     "copyright": "Copyright Â© 2026",
     "directories": {
       "output": "release",
@@ -56,7 +56,7 @@
       "entitlementsInherit": "build-assets/entitlements.mac.plist"
     },
     "dmg": {
-      "title": "\u8bed\u6587\u6559\u5b66\u5de5\u4f5c\u53f0",
+      "title": "语文教学工作台",
       "contents": [
         {
           "x": 130,
@@ -100,6 +100,7 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
+    "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.4"
   },
@@ -123,4 +124,3 @@
     "wait-on": "^9.0.5"
   }
 }
-

@@ -7,10 +7,20 @@ import {
   ChevronRight, ChevronDown, CheckCircle2,
   MessageSquare, Calendar, Copy, Check,
   TrendingUp, Layers, FileText, ChevronLeft,
+  BarChart2, AlertCircle, Loader2,
 } from 'lucide-react';
-import type { Task } from '../types';
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  PolarRadiusAxis, ResponsiveContainer,
+} from 'recharts';
+import type { Task, Settings } from '../types';
 import { buildStudentProfiles } from '../utils/student';
 import type { StudentProfile } from '../utils/student';
+import {
+  analyzeStudentAbilities,
+  ABILITY_DIMENSIONS,
+  type AbilityScores,
+} from '../utils/studentAbility';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -280,14 +290,168 @@ function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) 
   );
 }
 
+// ─── AbilityState ─────────────────────────────────────────────────────────────
+
+interface AbilityState {
+  loading: boolean;
+  scores: AbilityScores | null;
+  error: string | null;
+}
+
+// ─── AbilityRadarCard ─────────────────────────────────────────────────────────
+
+function AbilityRadarCard({
+  student,
+  ability,
+  onGenerate,
+}: {
+  student: StudentProfile;
+  ability: AbilityState | undefined;
+  onGenerate: () => void;
+}) {
+  const feedbackCount = student.tasks.filter(t => !!t.aiSummary).length;
+  const hasEnoughFeedback = feedbackCount >= 2;
+
+  const radarData = ability?.scores
+    ? ABILITY_DIMENSIONS.map(dim => ({
+        subject: dim,
+        score: ability.scores![dim],
+        fullMark: 10,
+      }))
+    : null;
+
+  return (
+    <div style={{
+      borderRadius: 12,
+      border: '1px solid var(--border)',
+      background: 'var(--bg-s2)',
+      padding: '14px 16px',
+      marginBottom: 14,
+    }}>
+      {/* Card header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <BarChart2 size={13} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            能力雷达图
+          </span>
+        </div>
+
+        {hasEnoughFeedback && !ability?.loading && (
+          <button
+            onClick={onGenerate}
+            style={{
+              fontSize: 11,
+              padding: '4px 12px',
+              borderRadius: 7,
+              cursor: 'pointer',
+              background: ability?.scores ? 'var(--bg-s3)' : 'var(--accent)',
+              color: ability?.scores ? 'var(--text-2)' : '#fff',
+              border: `1px solid ${ability?.scores ? 'var(--border)' : 'transparent'}`,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <Sparkles size={10} />
+            {ability?.scores ? '重新分析' : '生成能力分析'}
+          </button>
+        )}
+      </div>
+
+      {/* States */}
+      {!hasEnoughFeedback && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-s3)', border: '1px solid var(--border)' }}>
+          <AlertCircle size={13} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            反馈记录不足（当前 {feedbackCount} 条，需至少 2 条），暂无法生成能力分析。
+          </span>
+        </div>
+      )}
+
+      {hasEnoughFeedback && !ability && (
+        <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-3)', fontSize: 12 }}>
+          点击「生成能力分析」，AI 将基于历史反馈评估 6 个维度的能力水平。
+        </div>
+      )}
+
+      {ability?.loading && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '20px 0', color: 'var(--accent)' }}>
+          <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+          <span style={{ fontSize: 12 }}>AI 正在分析中…</span>
+        </div>
+      )}
+
+      {ability?.error && !ability.loading && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', borderRadius: 8, background: '#3b0a0a20', border: '1px solid #7f1d1d40' }}>
+          <AlertCircle size={13} style={{ color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+          <span style={{ fontSize: 12, color: '#f87171', lineHeight: 1.5 }}>{ability.error}</span>
+        </div>
+      )}
+
+      {radarData && ability?.scores && !ability?.loading && (
+        <div>
+          {/* Radar chart */}
+          <ResponsiveContainer width="100%" height={260}>
+            <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
+              <PolarGrid stroke="var(--border)" />
+              <PolarAngleAxis
+                dataKey="subject"
+                tick={{ fontSize: 11, fill: 'var(--text-2)' }}
+              />
+              <PolarRadiusAxis
+                angle={30}
+                domain={[0, 10]}
+                tickCount={6}
+                tick={{ fontSize: 9, fill: 'var(--text-3)' }}
+                axisLine={false}
+              />
+              <Radar
+                name="能力"
+                dataKey="score"
+                stroke="#6366f1"
+                fill="#6366f1"
+                fillOpacity={0.22}
+                dot={{ r: 3, fill: '#6366f1' }}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+
+          {/* Dimension score list */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+            {ABILITY_DIMENSIONS.map(dim => {
+              const scores = ability.scores!;
+              const score = scores[dim];
+              const pct = (score / 10) * 100;
+              const color = score >= 8 ? '#34d399' : score >= 6 ? '#6366f1' : score >= 4 ? '#f59e0b' : '#f87171';
+              return (
+                <div key={dim} style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--bg-s1)', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{dim}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color }}>{score}</span>
+                  </div>
+                  <div style={{ height: 3, borderRadius: 2, background: 'var(--border)' }}>
+                    <div style={{ height: '100%', borderRadius: 2, background: color, width: `${pct}%`, transition: 'width 0.6s ease' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── StudentDetail ────────────────────────────────────────────────────────────
 
 function StudentDetail({
-  student, onGotoTask, onBack,
+  student, onGotoTask, onBack, settings, ability, onGenerateAbility,
 }: {
   student: StudentProfile;
   onGotoTask: (id: string) => void;
   onBack?: () => void;
+  settings: Settings;
+  ability: AbilityState | undefined;
+  onGenerateAbility: (student: StudentProfile, settings: Settings) => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -332,8 +496,16 @@ function StudentDetail({
         </div>
       </div>
 
-      {/* Task timeline */}
+      {/* Scrollable content: ability chart + task timeline */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }} className="scrollbar-thin">
+        {/* Ability radar card */}
+        <AbilityRadarCard
+          student={student}
+          ability={ability}
+          onGenerate={() => onGenerateAbility(student, settings)}
+        />
+
+        {/* Task timeline header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <TrendingUp size={13} style={{ color: 'var(--text-3)' }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -352,10 +524,11 @@ function StudentDetail({
 
 interface Props {
   tasks: Task[];
+  settings: Settings;
   onGotoTask: (taskId: string) => void;
 }
 
-export function StudentArchive({ tasks, onGotoTask }: Props) {
+export function StudentArchive({ tasks, settings, onGotoTask }: Props) {
   const isMobile = useIsMobile();
   const [selected, setSelected] = useState<string | null>(null);
   // Mobile: 'list' | 'detail'
@@ -366,6 +539,36 @@ export function StudentArchive({ tasks, onGotoTask }: Props) {
   const selectedStudent = selected
     ? students.find(s => s.key === selected) ?? students[0] ?? null
     : students[0] ?? null;
+
+  // Cached ability scores per student key
+  const [abilityMap, setAbilityMap] = useState<Record<string, AbilityState>>({});
+
+  const handleGenerateAbility = async (student: StudentProfile, cfg: Settings) => {
+    const feedbacks = student.tasks
+      .map(t => t.aiSummary)
+      .filter((s): s is string => !!s && s.length > 0);
+
+    if (feedbacks.length < 2) return;
+
+    setAbilityMap(prev => ({
+      ...prev,
+      [student.key]: { loading: true, scores: null, error: null },
+    }));
+
+    try {
+      const scores = await analyzeStudentAbilities(feedbacks, cfg);
+      setAbilityMap(prev => ({
+        ...prev,
+        [student.key]: { loading: false, scores, error: null },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAbilityMap(prev => ({
+        ...prev,
+        [student.key]: { loading: false, scores: null, error: `分析失败：${msg}` },
+      }));
+    }
+  };
 
   const handleSelect = (key: string) => {
     setSelected(key);
@@ -398,7 +601,14 @@ export function StudentArchive({ tasks, onGotoTask }: Props) {
         ) : (
           /* Mobile detail view */
           selectedStudent ? (
-            <StudentDetail student={selectedStudent} onGotoTask={onGotoTask} onBack={handleBack} />
+            <StudentDetail
+              student={selectedStudent}
+              onGotoTask={onGotoTask}
+              onBack={handleBack}
+              settings={settings}
+              ability={abilityMap[selectedStudent.key]}
+              onGenerateAbility={handleGenerateAbility}
+            />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)' }}>
               <User size={40} style={{ opacity: 0.2 }} />
@@ -433,7 +643,13 @@ export function StudentArchive({ tasks, onGotoTask }: Props) {
       {/* ── Right: student detail ── */}
       <div style={{ flex: 1, minWidth: 0, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-s1)', overflow: 'hidden' }}>
         {selectedStudent ? (
-          <StudentDetail student={selectedStudent} onGotoTask={onGotoTask} />
+          <StudentDetail
+            student={selectedStudent}
+            onGotoTask={onGotoTask}
+            settings={settings}
+            ability={abilityMap[selectedStudent.key]}
+            onGenerateAbility={handleGenerateAbility}
+          />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)' }}>
             <User size={40} style={{ opacity: 0.2 }} />
