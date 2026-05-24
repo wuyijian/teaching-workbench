@@ -416,7 +416,25 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       ? `\n\n（系统提示：为避免超长上下文导致内存/请求问题，${truncationHints.join('；')}。）`
       : '';
 
-    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}${kbBlock}${truncationBlock}`;
+    // 查找同一学生最近 3 次有已保存反馈的历史任务
+    const historicalFeedbacks = tasks
+      .filter(t =>
+        t.id !== selectedTask.id &&
+        t.studentName === selectedTask.studentName &&
+        t.aiSummary?.trim(),
+      )
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 3)
+      .reverse();
+    const historyBlock = historicalFeedbacks.length > 0
+      ? `\n\n【该学生历史反馈记录（供参考）】\n${historicalFeedbacks.map(t => {
+          const d = new Date(t.createdAt);
+          const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return `${ds}：${t.aiSummary!.trim()}`;
+        }).join('\n')}\n\n请参考以上记录，关注学生的进步情况，避免重复已指出的问题。`
+      : '';
+
+    const userContent = `${prompt}\n\n---\n${meta}${notesBlock}${examAnalysisBlock}${examFileSection}${transcriptSection}${kbBlock}${historyBlock}${truncationBlock}`;
 
     const userMessage: AiMessage = { role: 'user', content: userContent };
 
@@ -443,7 +461,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         abortControllers.current.delete(taskId);
       }
     }
-  }, [selectedTask, settings, notes, activePrompt, patchSession]); // subscription 通过 subscriptionRef 访问，避免每次 context 更新重建
+  }, [selectedTask, tasks, settings, notes, activePrompt, patchSession]); // subscription 通过 subscriptionRef 访问，避免每次 context 更新重建
 
   const cancel = () => {
     if (!selectedId) return;
