@@ -6,14 +6,12 @@ import {
   User, FileAudio, Sparkles, BookOpen, Clock,
   ChevronRight, ChevronDown, CheckCircle2,
   MessageSquare, Calendar, Copy, Check,
-  TrendingUp, Layers, MessageCircle, FileText, ChevronLeft,
+  TrendingUp, Layers, FileText, ChevronLeft,
 } from 'lucide-react';
 import type { Task } from '../types';
 import { buildStudentProfiles } from '../utils/student';
 import type { StudentProfile } from '../utils/student';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { WechatSendModal } from './WechatSendModal';
-import { formatParentMessage } from '../utils/wechat';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -115,8 +113,6 @@ function StudentList({
 function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [wechatOpen, setWechatOpen] = useState(false);
-
   const hasFeedback = !!task.aiSummary;
   const hasTranscript = task.segments.length > 0;
   const isDone = task.status === 'done';
@@ -245,12 +241,6 @@ function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) 
                   >
                     {copied ? <><Check size={10} style={{ color: 'var(--green)' }} /> 已复制</> : <><Copy size={10} /> 复制</>}
                   </button>
-                  <button
-                    onClick={() => setWechatOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg-s3)', color: '#07C160', border: '1px solid var(--border)' }}
-                  >
-                    <MessageCircle size={10} /> 发给家长
-                  </button>
                 </div>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.75, whiteSpace: 'pre-wrap', padding: '12px 14px', borderRadius: 8, background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
@@ -286,19 +276,6 @@ function TaskEntry({ task, onGotoTask }: { task: Task; onGotoTask: (id: string) 
         </div>
       )}
 
-      {/* 发给家长弹窗 */}
-      {wechatOpen && task.aiSummary && (
-        <WechatSendModal
-          studentName={task.studentName}
-          message={formatParentMessage({
-            studentName: task.studentName,
-            topic: task.topic,
-            feedback: task.aiSummary,
-            date: new Date(task.createdAt),
-          })}
-          onClose={() => setWechatOpen(false)}
-        />
-      )}
     </div>
   );
 }

@@ -12,10 +12,9 @@ interface Props {
   selectedTaskId: string | null;
   onSaveToTask: (taskId: string, summary: string) => void;
   onSaveNotes: (taskId: string, notes: string) => void;
-  onOpenSettings?: () => void;
 }
 
-export function RightPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes, onOpenSettings }: Props) {
+export function RightPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
   const [tab, setTab] = useState<Tab>('feedback');
   const selectedTask = tasks.find(t => t.id === selectedTaskId) ?? null;
 
@@ -80,7 +79,6 @@ export function RightPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSa
             selectedTaskId={selectedTaskId}
             onSaveToTask={onSaveToTask}
             onSaveNotes={onSaveNotes}
-            onOpenSettings={onOpenSettings}
           />
         </div>
         <div className={`absolute inset-0 ${tab === 'chat' ? '' : 'hidden'}`}>

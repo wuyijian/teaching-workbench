@@ -135,7 +135,6 @@ try {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
   INITIAL_DATA = { tasks: [], mergedArchived: {} };
 }
-// import { notifyParent } from '../utils/wechat'; // temporarily unused while WeChat notify is hidden
 import { buildSignature, getDateTime, randomStr, parseXfyunResult } from '../utils/xfyun';
 import {
   buildVolcanoHeaders, buildVolcanoBody, fileToBase64,
@@ -527,12 +526,6 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
 
       // 以 void 启动，不阻塞循环，让 while 继续填满并发槽
       void (async () => {
-        // 提前捕获学生姓名列表（暂时隐藏微信通知，保留代码备用）
-        // const taskRef = tasksRef.current.find(t => t.id === id);
-        // const taskStudentNames = taskRef?.studentNames?.length
-        //   ? taskRef.studentNames
-        //   : taskRef?.studentName ? [taskRef.studentName] : [];
-
         // ── 配额守门：估算时长，未登录 / 额度不足直接终止 ──────────────────
         const qApi = quotaApiRef.current;
         const estSec = await estimateDurationSec(file);
@@ -558,11 +551,6 @@ export function useTaskManager(settings: Settings, language: string, quotaApi?: 
             patch(id, { status: 'done', progress: 100, segments, audioFile: undefined }, { cloudSync: true });
             // 扣量：使用估算时长（来自音频元数据，已是真实总长）
             if (qApi) await qApi.recordUsage(estMin);
-            // 转写完成自动通知家长（暂时隐藏微信功能，跳过通知）
-            // const durationLabel = estMin > 0 ? `共 ${estMin} 分钟，` : '';
-            // for (const name of taskStudentNames) {
-            //   notifyParent(name, `「${name}」的课堂录音已转写完成，${durationLabel}可以查看转写内容了。`);
-            // }
           }
         } catch (err: unknown) {
           if (!stopFlags.current.get(id)) {

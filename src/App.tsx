@@ -53,16 +53,9 @@ export default function App() {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'detail'>('list');
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<string | undefined>();
-
-  const handleOpenSettingsAtWechat = useCallback(() => {
-    setSettingsSection('wechat');
-    setShowSettings(true);
-  }, []);
 
   const handleCloseSettings = useCallback(() => {
     setShowSettings(false);
-    setSettingsSection(undefined);
   }, []);
   const [language, setLanguage] = useState(settings.language || 'zh-CN');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -383,7 +376,7 @@ export default function App() {
 
           {/* 设置 */}
           <button
-            onClick={() => { setSettingsSection(undefined); setShowSettings(true); }}
+            onClick={() => { setShowSettings(true); }}
             className="flex items-center gap-1.5 rounded-lg transition-all"
             style={{
               ...(needsConfig
@@ -446,7 +439,6 @@ export default function App() {
                   selectedTaskId={selectedTaskId}
                   onSaveToTask={handleSaveToTask}
                   onSaveNotes={handleSaveNotes}
-                  onOpenSettings={handleOpenSettingsAtWechat}
                 />
               </div>
             </>
@@ -477,7 +469,6 @@ export default function App() {
                   selectedTaskId={selectedTaskId}
                   onSaveToTask={handleSaveToTask}
                   onSaveNotes={handleSaveNotes}
-                  onOpenSettings={handleOpenSettingsAtWechat}
                 />
               </div>
             </div>
@@ -523,7 +514,6 @@ export default function App() {
           settings={settings}
           onSave={handleSaveSettings}
           onClose={handleCloseSettings}
-          openAtWechat={settingsSection === 'wechat'}
         />
       )}
 

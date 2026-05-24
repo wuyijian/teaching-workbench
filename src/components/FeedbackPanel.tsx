@@ -2,19 +2,15 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Sparkles, FileText, Copy, Check, Download, BookmarkCheck,
   RefreshCw, Send, Square, ChevronDown, Bot, User,
-  AlertCircle, Loader2, ClipboardList, ChevronUp, MessageCircle, Wand2,
+  AlertCircle, Loader2, ClipboardList, ChevronUp, Wand2,
 } from 'lucide-react';
 import type { Task, Settings } from '../types';
 import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
 import { resolveApiBase } from '../config/urls';
-import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
-// import { useAuth } from '../context/AuthContext'; // temporarily unused while WeChat notify is hidden
-import { WechatSendModal } from './WechatSendModal';
-import { formatParentMessage, getParentContact } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatKnowledgeReferencesBlock, getKnowledgeReferences } from '../knowledgebase/search';
 
@@ -35,8 +31,6 @@ interface Props {
   selectedTaskId: string | null;
   onSaveToTask: (taskId: string, summary: string) => void;
   onSaveNotes: (taskId: string, notes: string) => void;
-  /** Opens the settings modal scrolled to the WeChat config section */
-  onOpenSettings?: () => void;
 }
 
 const MAX_PROMPT_TRANSCRIPT_CHARS = 30_000;
@@ -246,8 +240,7 @@ const EMPTY_SESSION: GenSession = {
 };
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes, onOpenSettings }: Props) {
-  // const { user } = useAuth(); // temporarily unused while WeChat notify is hidden
+export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
   const subscription = useSubscription();
   // Ref 模式：避免将 subscription 对象（每次 SubscriptionProvider 渲染都是新引用）
   // 放入 useCallback 依赖数组，防止 generate/handleFollowUp 每次 context 更新都重建
@@ -273,17 +266,6 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [promptPresetIdx, setPromptPresetIdx] = useState(0);
   const [customPrompt, setCustomPrompt] = useState('');
-  const [wechatOpen, setWechatOpen] = useState(false);
-  const [wechatSyncing, setWechatSyncing] = useState(false);
-  // Weclaw offline / session-expired indicator (checked once on mount, refreshed after sync errors)
-  const [weclawOffline, setWeclawOffline] = useState(false);
-  const [wechatSyncMsg, setWechatSyncMsg] = useState<{
-    type: 'ok' | 'err';
-    text: string;
-    /** When true, renders a "去配置 →" action inside the banner */
-    showSettings?: boolean;
-  } | null>(null);
-
   const isCustomPrompt = promptPresetIdx === PROMPT_PRESETS.length - 1;
   const activePrompt = isCustomPrompt
     ? customPrompt
@@ -349,16 +331,6 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       if (done[0]) setSelectedId(done[0].id);
     }
   }, [tasks, selectedId]);
-
-  // 检查 weclaw 是否在线（暂时隐藏微信功能，跳过此检查）
-  // useEffect(() => {
-  //   fetchWithTimeout('/wechat-agent/weclaw-status', {}, 5000)
-  //     .then(r => r.ok ? r.json() : null)
-  //     .then((data: { running: boolean; sessionExpired?: boolean } | null) => {
-  //       if (data) setWeclawOffline(!data.running || data.sessionExpired === true);
-  //     })
-  //     .catch(() => { /* 静默 */ });
-  // }, []);
 
   const handleNotesChange = useCallback((val: string) => {
     setNotes(val);
@@ -462,12 +434,6 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           });
         },
       );
-      // AI 反馈生成完成后通知老师自己（暂时隐藏微信功能，跳过通知）
-      // if (fullFeedback) {
-      //   const taskNames = getStudentNames(selectedTask);
-      //   const namesLabel = taskNames.join('、');
-      //   notifySelf(`「${namesLabel}」的课堂反馈已生成：\n\n${fullFeedback}`, user?.id);
-      // }
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;
       patchSession(taskId, { error: e instanceof Error ? e.message : '生成失败' });
@@ -555,86 +521,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
     }
   }, [input, selectedId, byTask, settings, patchSession]); // subscription 通过 subscriptionRef 访问
 
-  // 同步已保存反馈到微信（通过 wechat-agent /send 接口）
-  const handleWechatSync = useCallback(async () => {
-    if (!selectedTask?.aiSummary) return;
-    const names = getStudentNames(selectedTask);
-
-    // Check every student has a contact configured
-    const missing = names.filter(n => !getParentContact(n)?.wechatName);
-    if (missing.length > 0) {
-      setWechatSyncMsg({
-        type: 'err',
-        text: `以下学生尚未绑定家长微信联系人：${missing.join('、')}`,
-        showSettings: true,
-      });
-      // Keep this banner visible longer so the user can click "去配置"
-      setTimeout(() => setWechatSyncMsg(null), 10_000);
-      return;
-    }
-
-    setWechatSyncing(true);
-    setWechatSyncMsg(null);
-    try {
-      const errors: string[] = [];
-      for (const studentName of names) {
-        const contact = getParentContact(studentName)!;
-        const message = formatParentMessage({
-          studentName,
-          topic: selectedTask.topic,
-          feedback: selectedTask.aiSummary,
-        });
-        const resp = await fetch('/wechat-agent/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: contact.wechatName, message }),
-        });
-        if (!resp.ok) {
-          // 非 2xx —— 通常是 nginx 没有 /wechat-agent/ location（返回 404 HTML）
-          // 或 wechat-agent 服务未启动（502）
-          const hint = resp.status === 404
-            ? '路由不存在（nginx 可能尚未注入 /wechat-agent/ 配置，请在服务器上执行 bash /tmp/patch-wechat-agent-nginx.sh）'
-            : resp.status === 502 || resp.status === 503
-              ? 'wechat-agent 服务未运行（请在服务器上执行 pm2 start wechat-agent）'
-              : `HTTP ${resp.status}`;
-          errors.push(`${studentName}：${hint}`);
-          continue;
-        }
-        const json = await resp.json() as { ok: boolean; error?: string };
-        if (!json.ok) {
-          errors.push(`${studentName}：${json.error ?? '发送失败'}`);
-        }
-      }
-      if (errors.length === 0) {
-        setWechatSyncMsg({
-          type: 'ok',
-          text: names.length > 1 ? `已发送给 ${names.length} 位家长` : '已发送',
-        });
-        setWeclawOffline(false);
-      } else {
-        setWechatSyncMsg({ type: 'err', text: errors.join('；') });
-        // 发送失败时重新检查 weclaw 状态以更新离线指示
-        fetchWithTimeout('/wechat-agent/weclaw-status', {}, 5000)
-          .then(r => r.ok ? r.json() : null)
-          .then((d: { running: boolean; sessionExpired?: boolean } | null) => {
-            if (d) setWeclawOffline(!d.running || d.sessionExpired === true);
-          })
-          .catch(() => { setWeclawOffline(true); });
-      }
-    } catch (e: unknown) {
-      setWechatSyncMsg({ type: 'err', text: `网络错误：${e instanceof Error ? e.message : '请检查 wechat-agent 服务'}` });
-      setWeclawOffline(true);
-    } finally {
-      setWechatSyncing(false);
-      setTimeout(() => setWechatSyncMsg(null), 5000);
-    }
-  }, [selectedTask]);
-
   const hasFeedback = feedback.length > 0;
   const isExamTask = selectedTask?.taskType === 'exam';
-  const hasAllContacts = selectedTask
-    ? getStudentNames(selectedTask).every(n => !!getParentContact(n)?.wechatName)
-    : true;
   /** 任务下拉里看到「正在生成」标记（useMemo 保证引用稳定，避免 TaskSelector 无效重渲染） */
   const generatingTaskIds = useMemo(
     () => new Set(Object.entries(byTask).filter(([, s]) => s.isGenerating || s.isFollowUp).map(([k]) => k)),
@@ -936,94 +824,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   {saved ? <BookmarkCheck size={10} /> : <Download size={10} />}
                   {saved ? '已保存' : '保存'}
                 </button>
-                {/* 发给家长 / 重新发送（暂时隐藏微信功能）*/}
-                {false && (
-                  <button onClick={() => setWechatOpen(true)} disabled={isGenerating}
-                    style={{ ...btnStyle(false), color: '#07C160' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-                    <MessageCircle size={10} />
-                    发给家长
-                  </button>
-                )}
-                {false && selectedTask?.aiSummary && (
-                  <button
-                    onClick={handleWechatSync}
-                    disabled={wechatSyncing}
-                    title={
-                      weclawOffline
-                        ? 'weclaw 当前离线或 session 已过期，发送可能失败，请前往设置重新扫码'
-                        : hasAllContacts
-                          ? '手动重新发送已保存反馈到微信'
-                          : '有学生未绑定家长微信，点击后将提示去设置页配置'
-                    }
-                    style={{
-                      ...btnStyle(false),
-                      color: wechatSyncMsg?.type === 'ok'
-                        ? 'var(--green)'
-                        : weclawOffline
-                          ? '#f97316'
-                          : hasAllContacts
-                            ? '#07C160'
-                            : '#f59e0b',
-                      borderColor: weclawOffline && wechatSyncMsg?.type !== 'ok'
-                        ? '#7c2d12'
-                        : !hasAllContacts && wechatSyncMsg?.type !== 'ok'
-                          ? '#92400e'
-                          : undefined,
-                    }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
-                  >
-                    {wechatSyncing
-                      ? <Loader2 size={10} className="animate-spin" />
-                      : wechatSyncMsg?.type === 'ok'
-                        ? <Check size={10} />
-                        : weclawOffline
-                          ? <AlertCircle size={10} />
-                          : hasAllContacts
-                            ? <Send size={10} />
-                            : <AlertCircle size={10} />}
-                    {wechatSyncMsg?.type === 'ok' ? '已发送' : '重新发送'}
-                  </button>
-                )}
               </div>
             </div>
-
-            {/* WeChat sync status（暂时隐藏微信功能）*/}
-            {(false as boolean) && wechatSyncMsg && (
-              <div className="mb-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
-                style={{
-                  background: wechatSyncMsg.type === 'ok'
-                    ? 'rgba(7,193,96,0.1)'
-                    : wechatSyncMsg.showSettings
-                      ? 'rgba(245,158,11,0.08)'
-                      : 'var(--red-dim)',
-                  border: `1px solid ${
-                    wechatSyncMsg.type === 'ok'
-                      ? 'rgba(7,193,96,0.3)'
-                      : wechatSyncMsg.showSettings
-                        ? 'rgba(245,158,11,0.35)'
-                        : '#5a1e1e'
-                  }`,
-                  color: wechatSyncMsg.type === 'ok'
-                    ? '#07C160'
-                    : wechatSyncMsg.showSettings
-                      ? '#f59e0b'
-                      : 'var(--red)',
-                }}>
-                <AlertCircle size={11} style={{ flexShrink: 0 }} />
-                <span className="flex-1">{wechatSyncMsg.text}</span>
-                {wechatSyncMsg.showSettings && onOpenSettings && (
-                  <button
-                    onClick={() => { setWechatSyncMsg(null); onOpenSettings(); }}
-                    className="shrink-0 font-medium underline underline-offset-2 hover:opacity-70 transition-opacity"
-                  >
-                    去配置 →
-                  </button>
-                )}
-              </div>
-            )}
 
             {/* Feedback plain text */}
             <div className="rounded-xl" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)', padding: '16px 18px' }}>
@@ -1086,18 +888,6 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         </div>
       )}
 
-      {/* 发给家长弹窗（暂时隐藏微信功能）*/}
-      {(false as boolean) && wechatOpen && selectedTask && (
-        <WechatSendModal
-          studentName={formatStudentNames(getStudentNames(selectedTask))}
-          message={formatParentMessage({
-            studentName: formatStudentNames(getStudentNames(selectedTask)),
-            topic: selectedTask.topic,
-            feedback,
-          })}
-          onClose={() => setWechatOpen(false)}
-        />
-      )}
     </div>
   );
 }
