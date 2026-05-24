@@ -12,6 +12,7 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getKimiFileContent } from '../utils/kimiFile';
 import { hasPlatformLlm } from '../config/platformApi';
 import { useSubscription } from '../context/SubscriptionContext';
+import { useAuth } from '../context/AuthContext';
 import { WechatSendModal } from './WechatSendModal';
 import { formatParentMessage, getParentContact, notifySelf } from '../utils/wechat';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -246,6 +247,7 @@ const EMPTY_SESSION: GenSession = {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes, onOpenSettings }: Props) {
+  const { user } = useAuth();
   const subscription = useSubscription();
   // Ref 模式：避免将 subscription 对象（每次 SubscriptionProvider 渲染都是新引用）
   // 放入 useCallback 依赖数组，防止 generate/handleFollowUp 每次 context 更新都重建
@@ -464,7 +466,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       if (fullFeedback) {
         const taskNames = getStudentNames(selectedTask);
         const namesLabel = taskNames.join('、');
-        notifySelf(`「${namesLabel}」的课堂反馈已生成：\n\n${fullFeedback}`);
+        notifySelf(`「${namesLabel}」的课堂反馈已生成：\n\n${fullFeedback}`, user?.id);
       }
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;

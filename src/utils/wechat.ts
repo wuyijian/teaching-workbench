@@ -130,21 +130,26 @@ function fireNativeNotification(body: string): void {
 
 /**
  * 向老师自己的微信发送通知（fire-and-forget）。
- * - 调用 /wechat-agent/send-self；若服务端未配置 WECLAW_SELF_NICKNAME，静默跳过。
+ * - 调用 /wechat-agent/send-self；若服务端未绑定对应 userId，静默跳过。
  * - Electron 环境下额外触发系统原生通知。
  * - 失败时仅 console.warn，不抛异常，不阻塞主流程。
+ * @param message 通知内容
+ * @param userId  Supabase user ID（多用户模式必传，单用户兜底时可省略）
  */
-export function notifySelf(message: string): void {
+export function notifySelf(message: string, userId?: string | null): void {
   const truncated = message.length > MAX_AUTO_MSG_LENGTH
     ? message.slice(0, MAX_AUTO_MSG_LENGTH) + '…'
     : message;
 
   fireNativeNotification(truncated);
 
+  const body: Record<string, string> = { message: truncated };
+  if (userId) body.userId = userId;
+
   fetch(`${wechatAgentBase}/send-self`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: truncated }),
+    body: JSON.stringify(body),
   })
     .then(async resp => {
       if (!resp.ok) {

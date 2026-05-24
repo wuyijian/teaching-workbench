@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, FileText, RotateCcw, Bot, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound, ChevronDown, ChevronRight, Bell } from 'lucide-react';
+import { X, FileText, RotateCcw, Bot, Plus, Trash2, Pencil, Check, QrCode, RefreshCw, KeyRound, ChevronDown, ChevronRight, Bell, Link2 } from 'lucide-react';
 import { FEEDBACK_PROMPT } from './TaskPanel';
 import type { Settings } from '../types';
 import { getAllParentContacts, setParentContact, deleteParentContact } from '../utils/wechat';
 import type { ParentContact } from '../utils/wechat';
 import { wechatAgentBase } from '../config/urls';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { useAuth } from '../context/AuthContext';
 
 interface Props {
   settings: Settings;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 type SelfBindStatus = 'idle' | 'checking' | 'bound' | 'unbound' | 'err';
+type BindCodeState = 'idle' | 'generating' | 'ready' | 'verifying' | 'bound' | 'err';
 type WeclawStatus = 'idle' | 'checking' | 'online_loggedin' | 'online_loggedout' | 'session_expired' | 'stopped' | 'err';
 
 type WeclawQr =
@@ -24,6 +26,8 @@ type WeclawQr =
   | { type: 'manual'; data: string };
 
 export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props) {
+  const { user } = useAuth();
+
   const [feedbackPrompt, setFeedbackPrompt] = useState(
     () => settings.feedbackPrompt ?? FEEDBACK_PROMPT,
   );
@@ -45,6 +49,14 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
   // ── WeChat state ──────────────────────────────────────────────────────────
   const [selfBindStatus, setSelfBindStatus] = useState<SelfBindStatus>('idle');
   const [selfBindNickname, setSelfBindNickname] = useState<string | null>(null);
+
+  // ── Bind code state ───────────────────────────────────────────────────────
+  const [bindCodeState, setBindCodeState] = useState<BindCodeState>('idle');
+  const [bindCode, setBindCode] = useState<string | null>(null);
+  const [bindCodeExpiresAt, setBindCodeExpiresAt] = useState<number | null>(null);
+  const [bindCodeSecondsLeft, setBindCodeSecondsLeft] = useState<number>(0);
+  const bindCodeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [contacts, setContacts] = useState<ParentContact[]>(() => getAllParentContacts());
   const [newStudent, setNewStudent] = useState('');
   const [newWechat, setNewWechat] = useState('');
@@ -84,23 +96,75 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
     onClose();
   };
 
-  // ── Self bind status check ────────────────────────────────────────────────
-  const handleCheckSelfStatus = useCallback(async () => {
-    setSelfBindStatus('checking');
-    setSelfBindNickname(null);
-    try {
-      const resp = await fetchWithTimeout(`${wechatAgentBase}/self-status`, {}, 5000);
-      if (resp.ok) {
-        const data = await resp.json() as { bound: boolean; nickname: string | null };
-        setSelfBindStatus(data.bound ? 'bound' : 'unbound');
-        setSelfBindNickname(data.nickname);
-      } else {
-        setSelfBindStatus('err');
-      }
-    } catch {
-      setSelfBindStatus('err');
+
+  // ── Bind code helpers ─────────────────────────────────────────────────────
+  const stopBindCodeTimer = useCallback(() => {
+    if (bindCodeTimerRef.current !== null) {
+      clearInterval(bindCodeTimerRef.current);
+      bindCodeTimerRef.current = null;
     }
   }, []);
+
+  const handleGenerateBindCode = useCallback(async () => {
+    if (!user?.id) return;
+    setBindCodeState('generating');
+    setBindCode(null);
+    setBindCodeExpiresAt(null);
+    stopBindCodeTimer();
+    try {
+      const resp = await fetchWithTimeout(
+        `${wechatAgentBase}/generate-bind-code?userId=${encodeURIComponent(user.id)}`,
+        {},
+        5000,
+      );
+      if (!resp.ok) { setBindCodeState('err'); return; }
+      const data = await resp.json() as { ok: boolean; code: string; expiresAt: number };
+      if (!data.ok) { setBindCodeState('err'); return; }
+      setBindCode(data.code);
+      setBindCodeExpiresAt(data.expiresAt);
+      const remaining = Math.max(0, Math.round((data.expiresAt - Date.now()) / 1000));
+      setBindCodeSecondsLeft(remaining);
+      setBindCodeState('ready');
+      bindCodeTimerRef.current = setInterval(() => {
+        setBindCodeSecondsLeft(s => {
+          if (s <= 1) {
+            stopBindCodeTimer();
+            setBindCodeState(prev => prev === 'ready' ? 'idle' : prev);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    } catch {
+      setBindCodeState('err');
+    }
+  }, [user?.id, stopBindCodeTimer]);
+
+  const handleVerifyBinding = useCallback(async () => {
+    if (!user?.id) return;
+    setBindCodeState('verifying');
+    try {
+      const resp = await fetchWithTimeout(
+        `${wechatAgentBase}/bind-status?userId=${encodeURIComponent(user.id)}`,
+        {},
+        5000,
+      );
+      if (!resp.ok) { setBindCodeState('err'); return; }
+      const data = await resp.json() as { bound: boolean; wechatName?: string };
+      if (data.bound) {
+        stopBindCodeTimer();
+        setBindCodeState('bound');
+        setSelfBindNickname(data.wechatName ?? null);
+        setSelfBindStatus('bound');
+      } else {
+        setBindCodeState('ready');
+      }
+    } catch {
+      setBindCodeState('err');
+    }
+  }, [user?.id, stopBindCodeTimer]);
+
+  useEffect(() => () => stopBindCodeTimer(), [stopBindCodeTimer]);
 
   // ── weclaw polling helpers ────────────────────────────────────────────────
   const stopWeclawPoll = useCallback(() => {
@@ -457,61 +521,111 @@ export function SettingsModal({ settings, onSave, onClose, openAtWechat }: Props
                 </div>
               </div>
 
-              {/* ── Step 2: Teacher binding ─────────────────────────────── */}
+              {/* ── Step 2: Teacher binding (bind-code flow) ────────────── */}
               <div className={`px-3 py-3 space-y-2 transition-opacity duration-200 ${weclawConnected ? '' : 'opacity-40 pointer-events-none'}`}>
                 <div className="flex items-center gap-2">
                   <StepBadge
                     n="②"
-                    done={selfBindStatus === 'bound'}
-                    active={weclawConnected && selfBindStatus !== 'bound'}
+                    done={bindCodeState === 'bound' || selfBindStatus === 'bound'}
+                    active={weclawConnected && bindCodeState !== 'bound' && selfBindStatus !== 'bound'}
                     locked={!weclawConnected}
                   />
                   <span className="text-xs font-medium text-slate-200">绑定老师身份</span>
                   <span className="text-[10px] text-slate-500">（接收反馈通知）</span>
                   <span className="ml-auto text-[11px]">
-                    {selfBindStatus === 'bound' && (
-                      <span className="text-emerald-400">✅ 已绑定：{selfBindNickname}</span>
+                    {(bindCodeState === 'bound' || selfBindStatus === 'bound') && (
+                      <span className="text-emerald-400">✅ 已绑定{selfBindNickname ? `：${selfBindNickname}` : ''}</span>
                     )}
-                    {selfBindStatus === 'unbound' && (
-                      <span className="text-amber-400">⚠️ 未绑定</span>
-                    )}
-                    {selfBindStatus === 'err' && (
-                      <span className="text-red-400">❌ 查询失败</span>
+                    {bindCodeState === 'err' && (
+                      <span className="text-red-400">❌ 操作失败</span>
                     )}
                   </span>
                 </div>
 
-                <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2">
-                  <p className="text-[11px] text-slate-400">
-                    向{' '}
-                    <span className="text-slate-200 font-medium">ClawBot</span>
-                    {' '}发送{' '}
-                    <span className="text-slate-200 font-medium">「绑定老师」</span>
-                    ，即可绑定您的微信接收反馈通知
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {selfBindStatus === 'checking' && (
-                      <span className="flex-1 text-[11px] text-slate-400 animate-pulse">检查中…</span>
-                    )}
-                    {selfBindStatus === 'unbound' && (
-                      <span className="flex-1 text-[11px] text-amber-400">尚未绑定，请先发送「绑定老师」</span>
-                    )}
-                    {selfBindStatus === 'err' && (
-                      <span className="flex-1 text-[11px] text-red-400">查询失败，请确认 ClawBot 服务运行中</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleCheckSelfStatus}
-                      disabled={selfBindStatus === 'checking'}
-                      className="ml-auto shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
-                    >
-                      {selfBindStatus === 'idle'
-                        ? '验证绑定状态'
-                        : selfBindStatus === 'bound'
-                        ? '检查状态'
-                        : '点击验证'}
-                    </button>
-                  </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 space-y-2.5">
+                  {/* Bound state */}
+                  {(bindCodeState === 'bound' || selfBindStatus === 'bound') ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-emerald-400 flex-1">
+                        ✅ 您的微信已与工作台账号关联，反馈通知将自动发送到微信。
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleGenerateBindCode}
+                        className="shrink-0 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+                      >
+                        重新绑定
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        点击获取绑定码，然后在微信向{' '}
+                        <span className="text-slate-200 font-medium">ClawBot</span>
+                        {' '}发送{' '}
+                        <span className="text-slate-200 font-medium">「绑定 &lt;绑定码&gt;」</span>
+                        {' '}完成关联。
+                      </p>
+
+                      {/* Bind code display */}
+                      {bindCode && bindCodeState === 'ready' && (
+                        <div className="rounded-lg border border-indigo-700/40 bg-indigo-950/20 px-3 py-2.5 space-y-1.5">
+                          <p className="text-[10px] text-slate-500">请在微信向 ClawBot 发送：</p>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-lg font-bold text-indigo-300 tracking-[0.25em]">
+                              绑定 {bindCode}
+                            </span>
+                            <span className={`ml-auto text-[11px] tabular-nums ${bindCodeSecondsLeft <= 60 ? 'text-orange-400' : 'text-slate-500'}`}>
+                              {Math.floor(bindCodeSecondsLeft / 60)}:{String(bindCodeSecondsLeft % 60).padStart(2, '0')}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-600">10分钟内有效，过期后重新获取</p>
+                        </div>
+                      )}
+
+                      {/* Expired */}
+                      {bindCodeState === 'idle' && bindCodeExpiresAt !== null && (
+                        <p className="text-[11px] text-amber-500">绑定码已过期，请重新获取。</p>
+                      )}
+
+                      {/* Error */}
+                      {bindCodeState === 'err' && (
+                        <p className="text-[11px] text-red-400">操作失败，请确认 ClawBot 服务运行中。</p>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2">
+                        {!user?.id ? (
+                          <p className="text-[11px] text-amber-400 flex-1">请先登录账号才能绑定微信</p>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleGenerateBindCode}
+                              disabled={bindCodeState === 'generating'}
+                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md bg-indigo-600/10 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/20 transition-colors disabled:opacity-50"
+                            >
+                              {bindCodeState === 'generating'
+                                ? <><RefreshCw size={10} className="animate-spin" /> 生成中…</>
+                                : <><Link2 size={10} /> {bindCode ? '重新获取' : '获取绑定码'}</>}
+                            </button>
+                            {(bindCodeState === 'ready' || bindCodeState === 'verifying') && (
+                              <button
+                                type="button"
+                                onClick={handleVerifyBinding}
+                                disabled={bindCodeState === 'verifying'}
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-slate-100 transition-colors disabled:opacity-50"
+                              >
+                                {bindCodeState === 'verifying'
+                                  ? <><RefreshCw size={10} className="animate-spin" /> 验证中…</>
+                                  : '验证绑定'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

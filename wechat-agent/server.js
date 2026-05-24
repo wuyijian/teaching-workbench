@@ -110,6 +110,46 @@ setInterval(checkWeclawHealth, 60 * 1000);
 // ── 健康检查 ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'wechat-agent' }));
 
+// ── 多用户绑定：生成绑定码 ────────────────────────────────────────────────────
+// GET /generate-bind-code?userId=<supabase_user_id>
+// 返回 { ok: true, code: "ABC123", expiresAt: 1234567890 }
+app.get('/generate-bind-code', (req, res) => {
+  const { userId } = req.query;
+  if (!userId || typeof userId !== 'string') {
+    return res.status(400).json({ ok: false, error: '参数缺失: userId' });
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 分钟
+  const cfg = readConfig();
+  if (!cfg.pendingCodes) cfg.pendingCodes = {};
+  if (!cfg.bindings) cfg.bindings = {};
+
+  // 清理已过期的绑定码
+  for (const [k, v] of Object.entries(cfg.pendingCodes)) {
+    if (v.expiresAt < Date.now()) delete cfg.pendingCodes[k];
+  }
+  cfg.pendingCodes[code] = { userId, expiresAt };
+  writeConfig(cfg);
+  console.log(`[generate-bind-code] 生成绑定码 ${code} → userId=${userId}（10分钟有效）`);
+  return res.json({ ok: true, code, expiresAt });
+});
+
+// ── 多用户绑定：查询绑定状态 ──────────────────────────────────────────────────
+// GET /bind-status?userId=<supabase_user_id>
+// 返回 { bound: true/false, wechatName?: "..." }
+app.get('/bind-status', (req, res) => {
+  const { userId } = req.query;
+  if (!userId || typeof userId !== 'string') {
+    return res.status(400).json({ ok: false, error: '参数缺失: userId' });
+  }
+  const cfg = readConfig();
+  const wechatName = cfg.bindings?.[userId];
+  return res.json({ bound: !!wechatName, wechatName: wechatName || undefined });
+});
+
 // ── 主动推送接口：Web 端一键同步反馈到微信 ────────────────────────────────────
 // POST /send  { to: "家长微信备注名", message: "消息正文" }
 // 需要环境变量 WECLAW_SEND_URL（ClawBot 主动推送地址）；
@@ -157,19 +197,38 @@ app.post('/send', async (req, res) => {
   }
 });
 
-// POST /send-self  { message: "消息正文" }
-// 将消息发给老师自己绑定的微信账号（由 WECLAW_SELF_NICKNAME 环境变量指定备注名）。
-// 若 WECLAW_SELF_NICKNAME 未配置，则静默跳过（返回 200 ok:false）。
+// POST /send-self  { message: "消息正文", userId?: "supabase_user_id" }
+// 将消息发给与 userId 绑定的微信账号。
+// 若传 userId 则优先查 config.bindings[userId]；兜底用旧的 selfNickname / env 变量。
 app.post('/send-self', async (req, res) => {
-  const { message } = req.body || {};
+  const { message, userId } = req.body || {};
   if (!message) {
     return res.status(400).json({ ok: false, error: '参数缺失：需要 message（消息内容）' });
   }
-  // 优先读取 config.json 中绑定的账号，fallback 到环境变量
-  const selfNickname = readConfig().selfNickname || process.env.WECLAW_SELF_NICKNAME;
+
+  const cfg = readConfig();
+
+  // 旧 teacher_open_id 向后兼容迁移（仅在 bindings 中不存在时执行一次）
+  if (cfg.teacher_open_id && !(cfg.bindings?.legacy)) {
+    if (!cfg.bindings) cfg.bindings = {};
+    cfg.bindings.legacy = cfg.teacher_open_id;
+    writeConfig(cfg);
+  }
+
+  // 优先用多用户绑定关系查找；否则 fallback 到旧 selfNickname / env 变量
+  let selfNickname = null;
+  if (userId && cfg.bindings?.[userId]) {
+    selfNickname = cfg.bindings[userId];
+  } else if (!userId) {
+    selfNickname = cfg.selfNickname || process.env.WECLAW_SELF_NICKNAME || null;
+  }
+
   if (!selfNickname) {
-    console.warn('[wechat-agent/send-self] 未绑定老师账号，跳过自我通知');
-    return res.json({ ok: false, error: '未绑定老师账号。请在微信向 ClawBot 发送「绑定老师」完成绑定，或在服务器 .env 中配置 WECLAW_SELF_NICKNAME' });
+    const hint = userId
+      ? `userId=${userId} 未绑定微信，请先通过绑定码完成绑定`
+      : '未绑定老师账号。请在微信向 ClawBot 发送「绑定 <绑定码>」完成绑定';
+    console.warn(`[wechat-agent/send-self] ${hint}`);
+    return res.json({ ok: false, error: hint });
   }
   if (!process.env.WECLAW_SEND_URL) {
     console.warn('[wechat-agent/send-self] WECLAW_SEND_URL 未配置，无法推送');
@@ -177,7 +236,7 @@ app.post('/send-self', async (req, res) => {
   }
   try {
     const ok = await sendToContact(selfNickname, message);
-    console.log(`[wechat-agent/send-self] ✅ 已发给自己（${selfNickname}），${message.length} 字`);
+    console.log(`[wechat-agent/send-self] ✅ 已发给（${selfNickname}），${message.length} 字`);
     return res.json({ ok });
   } catch (err) {
     console.error('[wechat-agent/send-self] 发送失败:', err.message);
@@ -185,10 +244,11 @@ app.post('/send-self', async (req, res) => {
   }
 });
 
-// ── 绑定状态查询 ──────────────────────────────────────────────────────────────
+// ── 绑定状态查询（旧接口，向后兼容） ─────────────────────────────────────────
 // GET /self-status → { bound: bool, nickname: string|null, source: "config"|"env"|null }
 app.get('/self-status', (_req, res) => {
-  const configNickname = readConfig().selfNickname;
+  const cfg = readConfig();
+  const configNickname = cfg.selfNickname;
   const envNickname    = process.env.WECLAW_SELF_NICKNAME;
   if (configNickname) {
     return res.json({ bound: true, nickname: configNickname, source: 'config' });
@@ -463,7 +523,29 @@ async function handleMessage(text, userId) {
 
   // ── 指令路由 ─────────────────────────────────────────────────────────────
 
-  // 绑定老师账号：把发送者（userId）保存到 config.json
+  // 多用户绑定码：「绑定 ABC123」
+  const bindCodeMatch = cmd.match(/^绑定\s*([A-Z0-9]{6})$/i);
+  if (bindCodeMatch) {
+    const code = bindCodeMatch[1].toUpperCase();
+    const cfg = readConfig();
+    const pending = cfg.pendingCodes?.[code];
+    if (!pending) {
+      return '❌ 绑定码无效或已过期，请在工作台重新获取绑定码。';
+    }
+    if (pending.expiresAt < Date.now()) {
+      delete cfg.pendingCodes[code];
+      writeConfig(cfg);
+      return '❌ 绑定码已过期（有效期10分钟），请在工作台重新获取。';
+    }
+    if (!cfg.bindings) cfg.bindings = {};
+    cfg.bindings[pending.userId] = userId; // userId 此处为 WeChat 显示名，用于后续发送
+    delete cfg.pendingCodes[code];
+    writeConfig(cfg);
+    console.log(`[wechat-agent/bind-code] ✅ 绑定成功: supabaseId=${pending.userId} → wechat=${userId}`);
+    return '✅ 绑定成功！您的微信已与教学工作台账号关联。后续反馈通知将发送到此微信。';
+  }
+
+  // 绑定老师账号（旧指令，向后兼容）：把发送者（userId）保存到 config.json
   if (/^(绑定老师|\/bind)$/i.test(cmd)) {
     const cfg = readConfig();
     cfg.selfNickname = userId;
@@ -731,7 +813,7 @@ const STATUS_LABEL = {
 const HELP_TEXT = `🤖 **语文教学工作台助手**
 
 **支持的指令：**
-• 绑定老师 — 将您的微信绑定为接收反馈通知的账号
+• 绑定 XXXXXX — 输入工作台生成的6位绑定码完成账号绑定
 • 任务列表 — 查看最近 7 天转写任务
 • 今日任务 — 查看今天的任务
 • 待反馈 — 列出未生成反馈的任务
