@@ -6,6 +6,7 @@ import {
   Archive, ArchiveRestore, FileDown, ChevronRight,
   Mic, Pause, Play, Square, FileText, Paperclip,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Task } from '../types';
 import { normalizeStudentKey, getStudentNames } from '../utils/student';
 import { pickAudioFileViaElectron } from '../config/app';
@@ -86,12 +87,12 @@ function formatDuration(seconds: number) {
   return `${m}:${s}`;
 }
 
-const STATUS_META: Record<Task['status'], { label: string; dot: string }> = {
-  queued:       { label: '排队中', dot: '#6e7681' },
-  uploading:    { label: '上传中', dot: '#d29922' },
-  transcribing: { label: '转写中', dot: '#4493f8' },
-  done:         { label: '完成',   dot: '#3fb950' },
-  error:        { label: '失败',   dot: '#f85149' },
+const STATUS_DOT: Record<Task['status'], string> = {
+  queued:       '#6e7681',
+  uploading:    '#d29922',
+  transcribing: '#4493f8',
+  done:         '#3fb950',
+  error:        '#f85149',
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ function CreateForm({
   onSubmit: (names: string[], topic: string, prompt: string, file: File | null, engine: Task['engine'], examAnalysis?: string, examFile?: Task['examFile'], examFileDataUrl?: string, examFileRaw?: File) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [taskFormType, setTaskFormType] = useState<'transcribe' | 'exam'>('transcribe');
   const [nameInputs, setNameInputs] = useState<string[]>(['']);
   const [topic, setTopic] = useState('');
@@ -243,7 +245,7 @@ function CreateForm({
     }
   };
 
-  const formTitle = taskFormType === 'exam' ? '新建试卷分析' : '新建课堂记录';
+  const formTitle = taskFormType === 'exam' ? t('task.newExamAnalysis') : t('task.newClassRecord');
 
   return (
     <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
@@ -266,7 +268,7 @@ function CreateForm({
               ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
               : { color: 'var(--text-3)', border: '1px solid transparent' }}
           >
-            <Mic size={11} /> 课堂记录
+            <Mic size={11} /> {t('task.typeClassRecord')}
           </button>
           <button
             type="button"
@@ -276,14 +278,14 @@ function CreateForm({
               ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
               : { color: 'var(--text-3)', border: '1px solid transparent' }}
           >
-            <FileText size={11} /> 试卷分析
+            <FileText size={11} /> {t('task.typeExam')}
           </button>
         </div>
 
         {/* Student names — shared between both types */}
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-            <User size={11} /> 学生姓名 <span className="text-red-400">*</span>
+            <User size={11} /> {t('task.studentName')} <span className="text-red-400">*</span>
           </label>
           <div className="space-y-2">
             {nameInputs.map((val, idx) => (
@@ -300,7 +302,7 @@ function CreateForm({
                       if (val.trim()) addNameField();
                     }
                   }}
-                  placeholder={idx === 0 ? '学生姓名' : '学生姓名（可选）'}
+                  placeholder={idx === 0 ? t('task.studentNamePlaceholder') : t('task.studentNamePlaceholderOptional')}
                   className="flex-1 bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
                 />
                 {nameInputs.length > 1 && (
@@ -311,7 +313,7 @@ function CreateForm({
                     style={{ color: 'var(--text-3)' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--red)'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
-                    title="删除"
+                    title={t('common.delete')}
                   >
                     <X size={13} />
                   </button>
@@ -326,7 +328,7 @@ function CreateForm({
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
             >
-              <Plus size={11} /> 添加学生
+              <Plus size={11} /> {t('task.addStudent')}
             </button>
           </div>
         </div>
@@ -335,14 +337,14 @@ function CreateForm({
         <div>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
             <BookOpen size={11} />
-            {taskFormType === 'exam' ? '考试/作业名称' : '主题'}
-            <span className="text-slate-600 text-[10px] ml-1">可选</span>
+            {taskFormType === 'exam' ? t('task.examName') : t('task.topic')}
+            <span className="text-slate-600 text-[10px] ml-1">{t('common.optional')}</span>
           </label>
           <input
             type="text"
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            placeholder={taskFormType === 'exam' ? '如：期中数学考试、第三单元作业' : '如：数学 · 二次函数、英语 · 阅读理解'}
+            placeholder={taskFormType === 'exam' ? t('task.examNamePlaceholder') : t('task.topicPlaceholder')}
             className="w-full bg-slate-800 border border-slate-600 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none transition-colors"
           />
         </div>
@@ -351,7 +353,7 @@ function CreateForm({
         {taskFormType === 'transcribe' && (
           <div>
             <label className="text-xs text-slate-400 font-medium mb-1.5 block">
-              音频来源 <span className="text-red-400">*</span>
+              {t('task.audioSource')} <span className="text-red-400">*</span>
             </label>
 
             <div className="flex gap-0.5 p-0.5 rounded-lg mb-3"
@@ -364,7 +366,7 @@ function CreateForm({
                   ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
                   : { color: 'var(--text-3)', border: '1px solid transparent' }}
               >
-                <Upload size={11} /> 上传文件
+                <Upload size={11} /> {t('task.uploadFile')}
               </button>
               <button
                 type="button"
@@ -374,7 +376,7 @@ function CreateForm({
                   ? { background: 'var(--bg-s2)', color: 'var(--text-1)', border: '1px solid var(--border)' }
                   : { color: 'var(--text-3)', border: '1px solid transparent' }}
               >
-                <Mic size={11} /> 现场录音
+                <Mic size={11} /> {t('task.liveRecording')}
               </button>
             </div>
 
@@ -388,7 +390,7 @@ function CreateForm({
                   <p className="text-sm truncate" style={{ color: 'var(--text-1)' }}>{file.name}</p>
                   <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>
                     {recordMode === 'record'
-                      ? `${formatDuration(recordedDuration)} · 点击「创建任务」开始转写`
+                      ? t('task.recordHint', { duration: formatDuration(recordedDuration) })
                       : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
                   </p>
                 </div>
@@ -418,7 +420,7 @@ function CreateForm({
                 <div
                   role="button"
                   tabIndex={0}
-                  aria-label="选择或拖入音频文件"
+                  aria-label={t('task.dropHint')}
                   className={`rounded-xl border-2 border-dashed transition-all cursor-pointer outline-none ${
                     dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 focus-visible:border-indigo-500'
                   }`}
@@ -435,8 +437,8 @@ function CreateForm({
                 >
                   <div className="flex flex-col items-center py-5 gap-2 select-none pointer-events-none">
                     <Upload size={20} className="text-slate-500" />
-                    <p className="text-xs text-slate-400">点击 · 拖入 · 或 ⌘V 粘贴音频文件</p>
-                    <p className="text-xs text-slate-600">MP3 · WAV · M4A · FLAC 等</p>
+                    <p className="text-xs text-slate-400">{t('task.dropHint')}</p>
+                    <p className="text-xs text-slate-600">{t('task.formatHint')}</p>
                   </div>
                 </div>
                 {filePickError && (
@@ -458,9 +460,9 @@ function CreateForm({
                     >
                       <Mic size={22} />
                     </button>
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>点击麦克风开始录音</p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>{t('task.recordStart')}</p>
                     {!recorder.isSupported && (
-                      <p className="text-xs" style={{ color: 'var(--amber)' }}>当前浏览器不支持录音</p>
+                      <p className="text-xs" style={{ color: 'var(--amber)' }}>{t('task.recordNotSupported')}</p>
                     )}
                     {recorder.error && (
                       <p className="text-xs text-center px-4" style={{ color: 'var(--red)' }}>{recorder.error}</p>
@@ -471,7 +473,7 @@ function CreateForm({
                 {recorder.state === 'requesting' && (
                   <>
                     <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>请求麦克风权限…</p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>{t('task.requestingMic')}</p>
                   </>
                 )}
 
@@ -491,7 +493,7 @@ function CreateForm({
                       </span>
                       <span className="text-xs"
                         style={{ color: recorder.state === 'paused' ? 'var(--amber)' : 'var(--text-3)' }}>
-                        {recorder.state === 'paused' ? '已暂停' : '录音中'}
+                        {recorder.state === 'paused' ? t('task.paused') : t('task.recording')}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -502,7 +504,7 @@ function CreateForm({
                           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
                           style={{ color: 'var(--text-2)', background: 'var(--bg-s2)', border: '1px solid var(--border)' }}
                         >
-                          <Pause size={11} /> 暂停
+                          <Pause size={11} /> {t('task.pause')}
                         </button>
                       ) : (
                         <button
@@ -511,7 +513,7 @@ function CreateForm({
                           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
                           style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}
                         >
-                          <Play size={11} /> 继续
+                          <Play size={11} /> {t('task.resume')}
                         </button>
                       )}
                       <button
@@ -520,7 +522,7 @@ function CreateForm({
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
                         style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid #5a1e1e' }}
                       >
-                        <Square size={11} /> 停止
+                        <Square size={11} /> {t('common.stop')}
                       </button>
                     </div>
                   </>
@@ -529,7 +531,7 @@ function CreateForm({
                 {recorder.state === 'done' && (
                   <>
                     <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>处理录音中…</p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>{t('task.processingRecording')}</p>
                   </>
                 )}
               </div>
@@ -542,12 +544,12 @@ function CreateForm({
           <div className="space-y-3">
             <div>
               <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-                <FileText size={11} /> 试卷批改结果 <span className="text-slate-600 text-[10px] ml-1">可选</span>
+                <FileText size={11} /> {t('task.examGradingResult')} <span className="text-slate-600 text-[10px] ml-1">{t('common.optional')}</span>
               </label>
               <textarea
                 value={examAnalysis}
                 onChange={e => setExamAnalysis(e.target.value)}
-                placeholder="可粘贴本次试卷批改结果、得分点/失分点、错题类型等"
+                placeholder={t('task.examGradingPlaceholder')}
                 rows={5}
                 className="w-full rounded-lg px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors resize-y min-h-[108px]"
                 style={{ background: 'var(--bg-s1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
@@ -558,7 +560,7 @@ function CreateForm({
 
             <div>
               <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5">
-                <Paperclip size={11} /> 试卷文件 <span className="text-slate-600 text-[10px] ml-1">可选，PDF / 图片 ≤ 10 MB</span>
+                <Paperclip size={11} /> {t('task.examFile')} <span className="text-slate-600 text-[10px] ml-1">{t('task.examFileHint')}</span>
               </label>
               <input
                 ref={examInputRef}
@@ -579,7 +581,7 @@ function CreateForm({
                     <p className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{examFile.name}</p>
                     <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
                       {(examFile.size / 1024 / 1024).toFixed(1)} MB
-                      <span className="ml-1" style={{ color: 'var(--text-3)' }}>· 文件内容不写入本地存储</span>
+                      <span className="ml-1" style={{ color: 'var(--text-3)' }}>{t('task.examFileNoStore')}</span>
                     </p>
                   </div>
                   <button
@@ -602,11 +604,11 @@ function CreateForm({
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
                 >
-                  <Paperclip size={11} /> 上传试卷文件（PDF / 图片，最大 10 MB）
+                  <Paperclip size={11} /> {t('task.uploadExamFile')}
                 </button>
               )}
               {examFileSizeWarning && (
-                <p className="text-[10px] mt-1" style={{ color: 'var(--red)' }}>文件超过 10 MB，请选择更小的文件</p>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--red)' }}>{t('task.examFileTooLarge')}</p>
               )}
             </div>
           </div>
@@ -617,7 +619,7 @@ function CreateForm({
           disabled={!canSubmit}
           className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all"
         >
-          {taskFormType === 'exam' ? '创建试卷分析任务' : '创建任务并开始转写'}
+          {taskFormType === 'exam' ? t('task.createExamTask') : t('task.createTranscribeTask')}
         </button>
       </div>
     </div>
@@ -639,7 +641,9 @@ function TaskCard({
   onCancel: () => void;
   onRetry: () => void;
 }) {
-  const meta = STATUS_META[task.status];
+  const { t } = useTranslation();
+  const statusDot = STATUS_DOT[task.status];
+  const statusLabel = t(`task.status.${task.status}`);
   const isActive = task.status === 'uploading' || task.status === 'transcribing';
   const isQueued = task.status === 'queued';
   const names = getStudentNames(task);
@@ -705,7 +709,7 @@ function TaskCard({
               {task.taskType === 'exam' && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
                   style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}>
-                  试卷
+                  {t('task.exam')}
                 </span>
               )}
             </div>
@@ -717,7 +721,7 @@ function TaskCard({
                   style={{ color: 'var(--text-3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--amber)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
-                  title="取消">
+                  title={t('common.cancel')}>
                   <X size={12} />
                 </button>
               )}
@@ -726,7 +730,7 @@ function TaskCard({
                   style={{ color: 'var(--text-3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
-                  title="重试">
+                  title={t('common.retry')}>
                   <RotateCcw size={12} />
                 </button>
               )}
@@ -734,7 +738,7 @@ function TaskCard({
                 style={{ color: 'var(--text-3)' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--red)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'}
-                title="删除">
+                title={t('common.delete')}>
                 <Trash2 size={12} />
               </button>
             </div>
@@ -744,13 +748,13 @@ function TaskCard({
           <div className="flex items-center gap-2 mt-1">
             <span className="inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full"
-                style={{ background: meta.dot, boxShadow: isActive ? `0 0 4px ${meta.dot}` : undefined }} />
-              <span className="text-[11px] font-medium" style={{ color: meta.dot }}>
-                {isQueued && queuePosition ? `排队第 ${queuePosition} 位` : meta.label}
+                style={{ background: statusDot, boxShadow: isActive ? `0 0 4px ${statusDot}` : undefined }} />
+              <span className="text-[11px] font-medium" style={{ color: statusDot }}>
+                {isQueued && queuePosition ? t('task.queuePosition', { position: queuePosition }) : statusLabel}
               </span>
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
-              {task.engine === 'volcano' ? '豆包大模型' : '讯飞大模型'}
+              {task.engine === 'volcano' ? t('task.engineVolcano') : t('task.engineXfyun')}
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
               {formatTime(task.createdAt)}
@@ -758,25 +762,25 @@ function TaskCard({
             {task.aiSummary && (
               <span className="text-[10px] px-1.5 py-0.5 rounded"
                 style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid #1e4d27' }}>
-                已反馈
+                {t('task.feedbackDone')}
               </span>
             )}
             {task.taskType === 'exam' && task.examKimiUploadStatus === 'uploading' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"
                 style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid #388bfd40' }}>
-                <Loader2 size={8} className="animate-spin" /> 试卷上传中…
+                <Loader2 size={8} className="animate-spin" /> {t('task.examUploading')}
               </span>
             )}
             {task.taskType === 'exam' && task.examKimiUploadStatus === 'ready' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded"
                 style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid #1e4d27' }}>
-                试卷已就绪
+                {t('task.examReady')}
               </span>
             )}
             {task.taskType === 'exam' && task.examKimiUploadStatus === 'error' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded"
                 style={{ background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid #5a1e1e' }}>
-                试卷上传失败
+                {t('task.examUploadFailed')}
               </span>
             )}
           </div>
@@ -818,6 +822,7 @@ function TaskDetail({
   onUnarchive: () => void;
   onExport: () => void;
 }) {
+  const { t } = useTranslation();
   const names = getStudentNames(task);
   const [copied, setCopied] = useState(false);
   const fullText = task.segments.map(s => `${formatSeg(s.timestamp)} ${s.text}`).join('\n');
@@ -890,7 +895,7 @@ function TaskDetail({
               {studentArchived && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5"
                   style={{ background: 'var(--bg-s3)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
-                  <Archive size={9} />{names.length > 1 ? '已归档' : '该同学已归档'}
+                  <Archive size={9} />{names.length > 1 ? t('task.archived') : t('task.studentArchived')}
                 </span>
               )}
             </div>
@@ -902,15 +907,15 @@ function TaskDetail({
         <div className="flex items-center gap-0.5 shrink-0">
           {isDone && (
             <>
-              {iconBtn('复制转写', copied ? <Check size={13} style={{ color: 'var(--green)' }} /> : <Copy size={13} />, handleCopy)}
-              {iconBtn('导出 Markdown', <FileDown size={13} />, onExport, 'var(--accent)')}
+              {iconBtn(t('task.copyTranscript'), copied ? <Check size={13} style={{ color: 'var(--green)' }} /> : <Copy size={13} />, handleCopy)}
+              {iconBtn(t('task.exportMarkdown'), <FileDown size={13} />, onExport, 'var(--accent)')}
               {studentArchived
-                ? iconBtn('恢复该同学到列表', <ArchiveRestore size={13} />, onUnarchive, 'var(--green)')
-                : iconBtn('将该同学移入归档', <Archive size={13} />, onArchive, 'var(--amber)')
+                ? iconBtn(t('task.restoreStudentToList'), <ArchiveRestore size={13} />, onUnarchive, 'var(--green)')
+                : iconBtn(t('task.archiveStudent'), <Archive size={13} />, onArchive, 'var(--amber)')
               }
             </>
           )}
-          {iconBtn('删除', <Trash2 size={13} />, onDelete, 'var(--red)')}
+          {iconBtn(t('common.delete'), <Trash2 size={13} />, onDelete, 'var(--red)')}
         </div>
       </div>
 
@@ -918,7 +923,7 @@ function TaskDetail({
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 min-h-0">
         {(task.examAnalysis?.trim() || task.examFile) && (
           <div className="mb-3.5 rounded-xl px-3.5 py-3" style={{ background: 'var(--bg-s2)', border: '1px solid var(--border)' }}>
-            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-3)' }}>试卷分析</p>
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-3)' }}>{t('task.examAnalysis')}</p>
             {task.examFile && (
               <div className="flex items-center gap-2 mb-2 rounded-lg px-2.5 py-1.5 border"
                 style={{ background: 'var(--bg-s1)', borderColor: 'var(--border)' }}>
@@ -931,14 +936,14 @@ function TaskDetail({
                 </div>
                 {task.examKimiUploadStatus === 'uploading' && (
                   <span className="text-[10px] shrink-0 flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                    <Loader2 size={9} className="animate-spin" /> 上传中…
+                    <Loader2 size={9} className="animate-spin" /> {t('task.uploadingText')}
                   </span>
                 )}
                 {task.examKimiUploadStatus === 'ready' && (
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--green)' }}>已就绪</span>
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--green)' }}>{t('task.fileReady')}</span>
                 )}
                 {task.examKimiUploadStatus === 'error' && (
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--red)' }}>上传失败</span>
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--red)' }}>{t('task.fileUploadFailed')}</span>
                 )}
               </div>
             )}
@@ -952,7 +957,7 @@ function TaskDetail({
         {isActive && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
             <Loader2 size={24} className="animate-spin text-indigo-400" />
-            <p className="text-sm">{task.status === 'uploading' ? '上传中…' : '转写中，请稍候…'}</p>
+            <p className="text-sm">{task.status === 'uploading' ? t('task.uploadingText') : t('task.transcribingWait')}</p>
             <div className="w-48 h-1.5 bg-slate-700 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${task.progress}%` }} />
             </div>
@@ -970,7 +975,7 @@ function TaskDetail({
         {task.status === 'done' && (
           <div className="space-y-2">
             <p className="text-xs text-slate-500 mb-3">
-              {task.segments.length} 段 · {task.segments.reduce((n, s) => n + s.text.length, 0)} 字
+              {t('task.segmentsChars', { segments: task.segments.length, chars: task.segments.reduce((n, s) => n + s.text.length, 0) })}
             </p>
             {task.segments.map(seg => (
               <div key={seg.id} className="flex gap-2">
@@ -1050,6 +1055,7 @@ export function TaskPanel({
   isStudentArchived, onArchiveStudent, onUnarchiveStudent,
   language, onLanguageChange,
 }: Props) {
+  const { t } = useTranslation();
   const [view, setView] = useState<View>('list');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showArchive, setShowArchive] = useState(false);
@@ -1107,7 +1113,7 @@ export function TaskPanel({
       <div className="flex items-center justify-between px-3 py-2.5 shrink-0"
         style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>任务列表</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{t('task.list')}</span>
           {activeCount > 0 && (
             <span className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full"
               style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid #5a3d0a' }}>
@@ -1137,7 +1143,7 @@ export function TaskPanel({
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
           >
-            <Plus size={12} /> 新建
+            <Plus size={12} /> {t('task.create')}
           </button>
         </div>
       </div>
@@ -1151,8 +1157,8 @@ export function TaskPanel({
               <FileAudio size={22} style={{ color: 'var(--text-3)' }} />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>暂无任务</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>点击「新建」创建课堂记录或试卷分析</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>{t('task.noTasks')}</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{t('task.noTasksHint')}</p>
             </div>
             <button
               onClick={() => setView('create')}
@@ -1161,7 +1167,7 @@ export function TaskPanel({
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
             >
-              <Plus size={13} /> 新建任务
+              <Plus size={13} /> {t('task.createTask')}
             </button>
           </div>
         ) : (
@@ -1203,7 +1209,7 @@ export function TaskPanel({
                 >
                   <Archive size={11} />
                   <span className="truncate text-left">
-                    已归档同学（{archivedPersonCount} 人 · {archivedTasks.length} 条）
+                    {t('task.archivedStudents', { persons: archivedPersonCount, count: archivedTasks.length })}
                   </span>
                   <ChevronRight size={11} className={`ml-auto shrink-0 transition-transform duration-200 ${showArchive ? 'rotate-90' : ''}`} />
                 </button>
@@ -1217,7 +1223,7 @@ export function TaskPanel({
                             {group.displayName}
                           </span>
                           <span className="text-[10px] shrink-0" style={{ color: 'var(--text-3)' }}>
-                            {group.tasks.length} 条
+                            {t('task.itemsCount', { count: group.tasks.length })}
                           </span>
                           <button
                             type="button"
@@ -1228,7 +1234,7 @@ export function TaskPanel({
                             className="ml-auto text-[10px] px-2 py-0.5 rounded-md shrink-0 transition-colors"
                             style={{ color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid #1e4d27' }}
                           >
-                            恢复同学
+                            {t('task.restoreStudent')}
                           </button>
                         </div>
                         <div className="space-y-1.5">

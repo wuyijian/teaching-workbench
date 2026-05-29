@@ -4,6 +4,7 @@ import {
   RefreshCw, Send, Square, ChevronDown, Bot, User,
   AlertCircle, Loader2, ClipboardList, ChevronUp, Wand2,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Task, Settings } from '../types';
 import { FEEDBACK_PROMPT, EXAM_FEEDBACK_PROMPT, PROMPT_PRESETS } from './TaskPanel';
 import { getStudentNames, formatStudentNames } from '../utils/student';
@@ -133,6 +134,7 @@ function TaskSelector({
   onSelect: (id: string) => void;
   generatingIds: Set<string>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const done = tasks.filter(t => t.status === 'done');
@@ -155,7 +157,7 @@ function TaskSelector({
         <span className="truncate">
           {selected
             ? `${formatStudentNames(getStudentNames(selected))}${selected.topic ? ` · ${selected.topic}` : ''}`
-            : done.length ? '选择任务…' : '暂无已完成任务'}
+            : done.length ? t('feedback.selectTask') : t('feedback.noCompletedTasks')}
         </span>
         {selectedGenerating && (
           <Loader2 size={10} className="animate-spin shrink-0" style={{ color: 'var(--accent)' }} />
@@ -166,7 +168,7 @@ function TaskSelector({
       {open && done.length > 0 && (
         <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a2030] border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
           <div className="px-3 py-2 border-b border-slate-700/60">
-            <p className="text-xs text-slate-400 font-medium">选择要生成反馈的任务</p>
+            <p className="text-xs text-slate-400 font-medium">{t('feedback.selectTaskForFeedback')}</p>
           </div>
           <div className="max-h-52 overflow-y-auto scrollbar-thin py-1">
             {done.map(task => {
@@ -183,10 +185,10 @@ function TaskSelector({
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-slate-200 font-medium truncate">{formatStudentNames(getStudentNames(task))}</p>
                     {task.topic && <p className="text-[10px] text-slate-500 truncate">{task.topic}</p>}
-                    {task.aiSummary && !generating && <p className="text-[10px] text-emerald-500">已有保存反馈</p>}
+                    {task.aiSummary && !generating && <p className="text-[10px] text-emerald-500">{t('feedback.hasSavedFeedback')}</p>}
                     {generating && (
                       <p className="text-[10px] flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                        <Loader2 size={9} className="animate-spin" /> 生成中…
+                        <Loader2 size={9} className="animate-spin" /> {t('feedback.generating')}
                       </p>
                     )}
                   </div>
@@ -241,6 +243,7 @@ const EMPTY_SESSION: GenSession = {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, onSaveNotes }: Props) {
+  const { t } = useTranslation();
   const subscription = useSubscription();
   // Ref 模式：避免将 subscription 对象（每次 SubscriptionProvider 渲染都是新引用）
   // 放入 useCallback 依赖数组，防止 generate/handleFollowUp 每次 context 更新都重建
@@ -454,7 +457,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
       );
     } catch (e: unknown) {
       if ((e as Error).name === 'AbortError') return;
-      patchSession(taskId, { error: e instanceof Error ? e.message : '生成失败' });
+      patchSession(taskId, { error: e instanceof Error ? e.message : t('feedback.generateFailed') });
     } finally {
       patchSession(taskId, { isGenerating: false });
       if (abortControllers.current.get(taskId) === ctrl) {
@@ -527,7 +530,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         setByTask(s => {
           const prev = s[taskId] ?? EMPTY_SESSION;
           const next = [...prev.followUps];
-          if (next.length) next[next.length - 1] = { ...next[next.length - 1], content: '❌ 请求失败，请重试' };
+          if (next.length) next[next.length - 1] = { ...next[next.length - 1], content: t('feedback.requestFailed') };
           return { ...s, [taskId]: { ...prev, followUps: next } };
         });
       }
@@ -573,7 +576,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
           {selectedTask && (
             isGenerating ? (
               <button onClick={cancel} style={{ ...btnStyle(), color: 'var(--red)', background: 'var(--red-dim)', borderColor: '#5a1e1e' }}>
-                <Square size={isMobile ? 12 : 10} /> 停止
+                <Square size={isMobile ? 12 : 10} /> {t('common.stop')}
               </button>
             ) : (
               <button onClick={generate}
@@ -582,7 +585,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
                 {hasFeedback ? <RefreshCw size={isMobile ? 13 : 10} /> : <Sparkles size={isMobile ? 13 : 10} />}
-                {hasFeedback ? '重新生成' : (isExamTask ? '生成分析' : '生成反馈')}
+                {hasFeedback ? t('feedback.regenerate') : (isExamTask ? t('feedback.generateAnalysis') : t('feedback.generateFeedback'))}
               </button>
             )
           )}
@@ -590,7 +593,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         {(settings.enableKnowledgeBase ?? true) && kbRefCount > 0 && (
           <div style={{ padding: '0 12px 8px' }}>
             <p className="text-[11px]" style={{ color: 'var(--accent)' }}>
-              已引用 {kbRefCount} 条教研资料
+              {t('feedback.referencedKb', { count: kbRefCount })}
             </p>
           </div>
         )}
@@ -605,7 +608,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
             >
               <Wand2 size={11} style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }} />
               <span className="flex-1" style={{ color: promptPresetIdx !== 0 || isCustomPrompt ? 'var(--accent)' : undefined }}>
-                Prompt：{PROMPT_PRESETS[promptPresetIdx]?.label ?? '课堂反馈'}
+                {t('feedback.promptLabel', { label: PROMPT_PRESETS[promptPresetIdx]?.label ?? t('feedback.promptFallback') })}
               </span>
               {promptExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
             </button>
@@ -635,7 +638,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   <textarea
                     value={customPrompt}
                     onChange={e => setCustomPrompt(e.target.value)}
-                    placeholder="输入自定义 Prompt…"
+                    placeholder={t('feedback.customPromptPlaceholder')}
                     rows={3}
                     className="scrollbar-thin w-full resize-none outline-none rounded-lg text-xs"
                     style={{
@@ -666,7 +669,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               style={{ padding: isMobile ? '10px 12px' : '5px 12px', color: notes.trim() ? 'var(--accent)' : 'var(--text-3)', fontSize: 11, minHeight: isMobile ? 40 : undefined }}
             >
               <ClipboardList size={11} />
-              <span className="flex-1">{notes.trim() ? `补充信息：${notes.slice(0, 30)}${notes.length > 30 ? '…' : ''}` : '添加补充信息（课前检测、课堂观察等）'}</span>
+              <span className="flex-1">{notes.trim() ? t('feedback.notesLabel', { notes: `${notes.slice(0, 30)}${notes.length > 30 ? '…' : ''}` }) : t('feedback.addNotes')}</span>
               {notesExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
             </button>
             {notesExpanded && (
@@ -674,7 +677,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                 <textarea
                   value={notes}
                   onChange={e => handleNotesChange(e.target.value)}
-                  placeholder="例如：课前检测平均分 78 分，有 3 名同学未完成作业；本节课重点难点为倒装句…"
+                  placeholder={t('feedback.notesPlaceholder')}
                   rows={3}
                   className="scrollbar-thin w-full resize-none outline-none rounded-lg"
                   style={{
@@ -689,7 +692,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                 />
                 <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
-                  此信息将在生成反馈时一并提供给 AI，自动保存
+                  {t('feedback.notesHint')}
                 </p>
               </div>
             )}
@@ -703,7 +706,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               className="font-semibold mb-1.5"
               style={{ color: 'var(--text-3)', fontSize: isMobile ? 12 : 11 }}
             >
-              试卷分析
+              {t('feedback.examAnalysis')}
             </p>
             {selectedTask.examFile && (
               <div className="flex items-center gap-2 mb-1.5 rounded-lg px-2.5 py-1.5 border"
@@ -717,14 +720,14 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                     {(selectedTask.examFile.size / 1024 / 1024).toFixed(1)} MB
                     {selectedTask.examKimiUploadStatus === 'uploading' && (
                       <span className="ml-1.5 inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                        <Loader2 size={9} className="animate-spin inline" /> 试卷上传中…
+                        <Loader2 size={9} className="animate-spin inline" /> {t('feedback.examUploading')}
                       </span>
                     )}
                     {selectedTask.examKimiUploadStatus === 'ready' && (
-                      <span className="ml-1.5" style={{ color: 'var(--green)' }}>· 试卷已就绪，可生成分析</span>
+                      <span className="ml-1.5" style={{ color: 'var(--green)' }}>{t('feedback.examReadyCanGenerate')}</span>
                     )}
                     {selectedTask.examKimiUploadStatus === 'error' && (
-                      <span className="ml-1.5" style={{ color: 'var(--red)' }}>· 试卷上传失败（将使用文字分析）</span>
+                      <span className="ml-1.5" style={{ color: 'var(--red)' }}>{t('feedback.examUploadFailedFallback')}</span>
                     )}
                   </p>
                 </div>
@@ -758,8 +761,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               <Sparkles size={20} style={{ color: 'var(--text-3)' }} />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>选择一个已完成的任务</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>从左侧选择任务后，一键生成课堂反馈</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>{t('feedback.emptySelectTask')}</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{t('feedback.emptyHint')}</p>
             </div>
           </div>
         )}
@@ -778,8 +781,8 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               </p>
               <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
                 {isExamTask
-                  ? '试卷分析 · 点击生成分析报告'
-                  : `${selectedTask.segments.length} 段转写 · 点击生成课堂反馈`}
+                  ? t('feedback.examReadyHint')
+                  : t('feedback.transcriptReadyHint', { count: selectedTask.segments.length })}
               </p>
             </div>
             <button onClick={generate}
@@ -793,7 +796,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-              <Sparkles size={isMobile ? 18 : 14} /> {isExamTask ? '生成试卷分析' : '生成课堂反馈'}
+              <Sparkles size={isMobile ? 18 : 14} /> {isExamTask ? t('feedback.generateExamAnalysis') : t('feedback.generateClassFeedback')}
             </button>
           </div>
         )}
@@ -802,7 +805,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
         {isGenerating && !hasFeedback && (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-            <p className="text-sm" style={{ color: 'var(--text-2)' }}>{isExamTask ? '正在生成试卷分析…' : '正在生成课堂反馈…'}</p>
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>{isExamTask ? t('feedback.generatingExamAnalysis') : t('feedback.generatingClassFeedback')}</p>
           </div>
         )}
 
@@ -833,14 +836,14 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'}>
                   {copied ? <Check size={10} style={{ color: 'var(--green)' }} /> : <Copy size={10} />}
-                  {copied ? '已复制' : '复制'}
+                  {copied ? t('common.copied') : t('common.copy')}
                 </button>
                 <button onClick={handleSave} disabled={!hasFeedback || isGenerating}
                   style={btnStyle(saved)}
                   onMouseEnter={e => { if (!saved) (e.currentTarget as HTMLElement).style.color = 'var(--text-1)'; }}
                   onMouseLeave={e => { if (!saved) (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}>
                   {saved ? <BookmarkCheck size={10} /> : <Download size={10} />}
-                  {saved ? '已保存' : '保存'}
+                  {saved ? t('common.saved') : t('common.save')}
                 </button>
               </div>
             </div>
@@ -857,7 +860,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-                  <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>追问</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>{t('feedback.followUp')}</span>
                   <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
                 </div>
                 {followUps.map((msg, i) => <FollowUpBubble key={i} msg={msg} />)}
@@ -876,7 +879,7 @@ export function FeedbackPanel({ tasks, settings, selectedTaskId, onSaveToTask, o
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp(); } }}
-              placeholder={isMobile ? '追问 AI…' : '针对此反馈追问… (Enter 发送)'}
+              placeholder={isMobile ? t('feedback.followUpPlaceholderMobile') : t('feedback.followUpPlaceholder')}
               rows={1}
               className="scrollbar-thin flex-1 resize-none outline-none rounded-xl"
               style={{

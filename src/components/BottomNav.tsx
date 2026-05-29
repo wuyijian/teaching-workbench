@@ -1,4 +1,5 @@
 import { Layout, Users, Bot } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AppMode } from '../types';
 
 interface Props {
@@ -7,13 +8,14 @@ interface Props {
   agentBadge?: number;
 }
 
-const TABS: { key: AppMode; icon: typeof Layout; label: string }[] = [
-  { key: 'workbench', icon: Layout, label: '工作台' },
-  { key: 'archive',   icon: Users,  label: '学生档案' },
-  { key: 'agent',     icon: Bot,    label: 'AI 助手' },
+const TABS: { key: AppMode; icon: typeof Layout; labelKey: string }[] = [
+  { key: 'workbench', icon: Layout, labelKey: 'nav.workbench' },
+  { key: 'archive',   icon: Users,  labelKey: 'nav.archive' },
+  { key: 'agent',     icon: Bot,    labelKey: 'nav.agent' },
 ];
 
 export function BottomNav({ mode, onChange, agentBadge = 0 }: Props) {
+  const { t } = useTranslation();
   return (
     <nav
       className="shrink-0 flex items-stretch"
@@ -24,7 +26,7 @@ export function BottomNav({ mode, onChange, agentBadge = 0 }: Props) {
         borderTop: '1px solid var(--border)',
       }}
     >
-      {TABS.map(({ key, icon: Icon, label }) => {
+      {TABS.map(({ key, icon: Icon, labelKey }) => {
         const active = mode === key;
         const showBadge = key === 'agent' && agentBadge > 0;
         return (
@@ -76,7 +78,7 @@ export function BottomNav({ mode, onChange, agentBadge = 0 }: Props) {
               className="font-medium"
               style={{ fontSize: 10, letterSpacing: '0.01em' }}
             >
-              {label}
+              {t(labelKey)}
             </span>
           </button>
         );

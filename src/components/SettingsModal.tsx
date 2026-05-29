@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { X, FileText, RotateCcw } from 'lucide-react';
+import { X, FileText, RotateCcw, Languages } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { FEEDBACK_PROMPT } from './TaskPanel';
+import { changeAppLanguage, type AppLang } from '../i18n';
 import type { Settings } from '../types';
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export function SettingsModal({ settings, onSave, onClose }: Props) {
+  const { t, i18n } = useTranslation();
   const [feedbackPrompt, setFeedbackPrompt] = useState(
     () => settings.feedbackPrompt ?? FEEDBACK_PROMPT,
   );
@@ -38,7 +41,7 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 shrink-0">
-          <h2 className="font-semibold text-slate-200">设置</h2>
+          <h2 className="font-semibold text-slate-200">{t('settings.title')}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200 transition-colors">
             <X size={18} />
           </button>
@@ -46,13 +49,29 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
 
         {/* Scrollable body */}
         <div className="px-5 py-4 space-y-4 overflow-y-auto">
+          {/* Language switcher */}
+          <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Languages size={14} className="text-slate-400" />
+              <p className="text-xs text-slate-200 font-medium">{t('settings.language')}</p>
+            </div>
+            <select
+              value={i18n.language?.startsWith('en') ? 'en' : 'zh'}
+              onChange={e => changeAppLanguage(e.target.value as AppLang)}
+              className="text-xs rounded-lg px-2 py-1 cursor-pointer outline-none bg-slate-800 border border-slate-600 text-slate-200"
+            >
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+
           {/* Knowledge base toggle */}
           <div>
             <div className="flex items-center justify-between mb-2 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
               <div>
-                <p className="text-xs text-slate-200 font-medium">启用知识库参考</p>
+                <p className="text-xs text-slate-200 font-medium">{t('settings.enableKnowledgeBase')}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  生成反馈/分析时自动拼入杭州语文教研资料摘要
+                  {t('settings.enableKnowledgeBaseDesc')}
                 </p>
               </div>
               <label className="inline-flex items-center cursor-pointer">
@@ -75,15 +94,15 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
             {/* Feedback prompt */}
             <div className="flex items-center justify-between mb-1.5">
               <label className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-                <FileText size={12} /> 课堂反馈 Prompt
+                <FileText size={12} /> {t('settings.feedbackPrompt')}
               </label>
               <button
                 type="button"
                 onClick={() => setFeedbackPrompt(FEEDBACK_PROMPT)}
                 className="flex items-center gap-1 text-xs text-slate-500 hover:text-emerald-400 transition-colors"
-                title="恢复默认 Prompt"
+                title={t('settings.restoreDefaultTitle')}
               >
-                <RotateCcw size={10} /> 恢复默认
+                <RotateCcw size={10} /> {t('settings.restoreDefault')}
               </button>
             </div>
             <textarea
@@ -94,7 +113,7 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
               spellCheck={false}
             />
             <p className="text-xs text-slate-500 mt-1">
-              {feedbackPrompt.length} 字符 · 课堂转写内容将自动追加在此 Prompt 之后
+              {t('settings.charCount', { count: feedbackPrompt.length })}
             </p>
           </div>
 
@@ -109,14 +128,14 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
             onClick={onClose}
             className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
             onClick={handleSave}
             className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors font-medium"
           >
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>
